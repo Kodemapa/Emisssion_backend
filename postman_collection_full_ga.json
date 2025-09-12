@@ -1,0 +1,268 @@
+{
+  "info": {
+    "name": "Prediction API Collection - SQLite",
+    "description": "Postman collection to test Flask Prediction API with SQLite3 DB",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Index",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:5000/",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": [""]
+        }
+      }
+    },
+    {
+      "name": "Auth Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/auth/login",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["auth", "login"]
+        }
+      }
+    },
+    {
+      "name": "Upload Vehicle Classification",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "multipart/form-data" }],
+        "body": {
+          "mode": "formdata",
+          "formdata": [{ "key": "file", "type": "file", "src": "" }]
+        },
+        "url": {
+          "raw": "http://localhost:5000/upload/vehicle_classification",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["upload", "vehicle_classification"]
+        }
+      }
+    },
+    {
+      "name": "Upload Penetration Rate",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "multipart/form-data" }],
+        "body": {
+          "mode": "formdata",
+          "formdata": [{ "key": "file", "type": "file", "src": "" }]
+        },
+        "url": {
+          "raw": "http://localhost:5000/upload/penetration_rate",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["upload", "penetration_rate"]
+        }
+      }
+    },
+    {
+      "name": "Upload Traffic Volume",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "multipart/form-data" }],
+        "body": {
+          "mode": "formdata",
+          "formdata": [{ "key": "file", "type": "file", "src": "" }]
+        },
+        "url": {
+          "raw": "http://localhost:5000/upload/traffic_volume",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["upload", "traffic_volume"]
+        }
+      }
+    },
+    {
+      "name": "Upload Projected Traffic",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "multipart/form-data" }],
+        "body": {
+          "mode": "formdata",
+          "formdata": [{ "key": "file", "type": "file", "src": "" }]
+        },
+        "url": {
+          "raw": "http://localhost:5000/upload/projected_traffic",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["upload", "projected_traffic"]
+        }
+      }
+    },
+    {
+      "name": "Upload MFD Params",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "multipart/form-data" }],
+        "body": {
+          "mode": "formdata",
+          "formdata": [{ "key": "file", "type": "file", "src": "" }]
+        },
+        "url": {
+          "raw": "http://localhost:5000/upload/mfd_params",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["upload", "mfd_params"]
+        }
+      }
+    },
+    {
+      "name": "Predict CO2",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"Age\": 5,\n  \"Speed\": 60,\n  \"Vehicle Type\": \"Passenger Car\",\n  \"Fuel Type\": \"Gasoline\",\n  \"State\": \"GA\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/co2",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "co2"]
+        }
+      }
+    },
+    {
+      "name": "Predict Energy",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"Age\": 5,\n  \"Speed\": 60,\n  \"Vehicle Type\": \"Passenger Car\",\n  \"Fuel Type\": \"Gasoline\",\n  \"State\": \"GA\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/energy",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "energy"]
+        }
+      }
+    },
+    {
+      "name": "Predict NOx",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"Age\": 5,\n  \"Speed\": 60,\n  \"Vehicle Type\": \"Passenger Car\",\n  \"Fuel Type\": \"Gasoline\",\n  \"State\": \"GA\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/nox",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "nox"]
+        }
+      }
+    },
+    {
+      "name": "Predict Brake PM2.5",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"Vehicle Weight\": 1500,\n  \"Speed\": 60,\n  \"Vehicle Type\": \"Passenger Car\",\n  \"Fuel Type\": \"Gasoline\",\n  \"State\": \"GA\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/brake",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "brake"]
+        }
+      }
+    },
+    {
+      "name": "Predict Tire PM2.5",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"Speed\": 60,\n  \"Road Gradient\": 5,\n  \"Vehicle Type\": \"Passenger Car\",\n  \"Fuel Type\": \"Gasoline\",\n  \"State\": \"GA\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/tire",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "tire"]
+        }
+      }
+    },
+    {
+      "name": "Scenario Vehicles",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"state\": \"GA\",\n  \"years\": [2025, 2030, 2040],\n  \"payload\": {\"Vehicle Type\": \"Passenger Car\", \"Fuel Type\": \"Gasoline\"}\n}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/scenarios/vehicles",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["scenarios", "vehicles"]
+        }
+      }
+    },
+    {
+      "name": "Results Emissions",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:5000/results/emissions?city=Atlanta&year=2025",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["results", "emissions"],
+          "query": [
+            { "key": "city", "value": "Atlanta" },
+            { "key": "year", "value": "2025" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Results Download CSV",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://localhost:5000/results/download",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["results", "download"]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,218 @@
+{
+	"info": {
+		"_postman_id": "60d309d4-3310-4127-a9ac-6155d03c0d87",
+		"name": "Emission_Routes",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "33888721"
+	},
+	"item": [
+		{
+			"name": "http://localhost:5000/predict_emissions",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "prediction_type",
+							"value": "CO2 Emission",
+							"type": "text"
+						},
+						{
+							"key": "cityname",
+							"value": "Atlanta",
+							"type": "text"
+						},
+						{
+							"key": "fuel_type",
+							"value": "Gasoline",
+							"type": "text"
+						},
+						{
+							"key": "age",
+							"value": "5",
+							"type": "text"
+						},
+						{
+							"key": "transaction_id",
+							"value": "d17d8576-b9e1-48d4-b51e-614e3ea058dc",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:5000/predict_emissions",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"predict_emissions"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:5000/predict_emissions",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "prediction_type",
+							"value": "Energy Rate",
+							"type": "text"
+						},
+						{
+							"key": "cityname",
+							"value": "Atlanta",
+							"type": "text"
+						},
+						{
+							"key": "fuel_type",
+							"value": "Gasoline",
+							"type": "text"
+						},
+						{
+							"key": "age",
+							"value": "5",
+							"type": "text"
+						},
+						{
+							"key": "transaction_id",
+							"value": "d17d8576-b9e1-48d4-b51e-614e3ea058dc",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:5000/predict_emissions",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"predict_emissions"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:5000/predict_emissions",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "prediction_type",
+							"value": "NOx",
+							"type": "text"
+						},
+						{
+							"key": "cityname",
+							"value": "Atlanta",
+							"type": "text"
+						},
+						{
+							"key": "fuel_type",
+							"value": "Gasoline",
+							"type": "text"
+						},
+						{
+							"key": "age",
+							"value": "5",
+							"type": "text"
+						},
+						{
+							"key": "transaction_id",
+							"value": "d17d8576-b9e1-48d4-b51e-614e3ea058dc",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:5000/predict_emissions",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"predict_emissions"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:5000/predict_emissions",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "prediction_type",
+							"value": "PM2.5 Brake Wear",
+							"type": "text"
+						},
+						{
+							"key": "cityname",
+							"value": "Atlanta",
+							"type": "text"
+						},
+						{
+							"key": "fuel_type",
+							"value": "Gasoline",
+							"type": "text"
+						},
+						{
+							"key": "age",
+							"value": "5",
+							"type": "text"
+						},
+						{
+							"key": "transaction_id",
+							"value": "d17d8576-b9e1-48d4-b51e-614e3ea058dc",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:5000/predict_emissions",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "5000",
+					"path": [
+						"predict_emissions"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

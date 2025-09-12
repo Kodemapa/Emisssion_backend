@@ -1,0 +1,144 @@
+{
+  "info": {
+    "name": "Prediction API Collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Postman collection to test the Prediction API endpoints for vehicle emissions and energy predictions."
+  },
+  "item": [
+    {
+      "name": "Index",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": [""]
+        },
+        "description": "Get the API index page."
+      }
+    },
+    {
+      "name": "Predict CO2 Emissions",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"Age\": 5, \"Speed\": 60, \"Vehicle Type\": \"Passenger Car\", \"Fuel Type\": \"Gasoline\", \"State\": \"CA\"}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/co2",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "co2"]
+        },
+        "description": "Predict CO2 emissions. Requires Age, Speed, Vehicle Type, Fuel Type, State."
+      }
+    },
+    {
+      "name": "Predict Energy Rate",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"Age\": 5, \"Speed\": 60, \"Vehicle Type\": \"Passenger Car\", \"Fuel Type\": \"Gasoline\", \"State\": \"CA\"}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/energy",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "energy"]
+        },
+        "description": "Predict energy rate. Requires Age, Speed, Vehicle Type, Fuel Type, State."
+      }
+    },
+    {
+      "name": "Predict NOx Emissions",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"Age\": 5, \"Speed\": 60, \"Vehicle Type\": \"Passenger Car\", \"Fuel Type\": \"Gasoline\", \"State\": \"CA\"}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/nox",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "nox"]
+        },
+        "description": "Predict NOx emissions. Requires Age, Speed, Vehicle Type, Fuel Type, State."
+      }
+    },
+    {
+      "name": "Predict PM2.5 Brake Wear",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"Vehicle Weight\": 1500, \"Speed\": 60, \"Vehicle Type\": \"Passenger Car\", \"Fuel Type\": \"Gasoline\", \"State\": \"CA\"}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/brake",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "brake"]
+        },
+        "description": "Predict PM2.5 from brake wear. Requires Vehicle Weight, Speed, Vehicle Type, Fuel Type, State."
+      }
+    },
+    {
+      "name": "Predict PM2.5 Tire Wear",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"Speed\": 60, \"Road Gradient\": 5, \"Vehicle Type\": \"Passenger Car\", \"Fuel Type\": \"Gasoline\", \"State\": \"CA\"}"
+        },
+        "url": {
+          "raw": "http://localhost:5000/predict/tire",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["predict", "tire"]
+        },
+        "description": "Predict PM2.5 from tire wear. Requires Speed, Road Gradient, Vehicle Type, Fuel Type, State."
+      }
+    }
+  ]
+}
