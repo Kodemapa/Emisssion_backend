@@ -29,6 +29,10 @@ CORS(app)
 
 DB_FILE = "prediction.db"
 
+# ---------- Global Transaction ID ----------
+# Use a single consistent transaction ID for all operations
+GLOBAL_TRANSACTION_ID = "emission-analysis-2025"
+
 # ---------- Init DB ----------
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -167,8 +171,8 @@ VEHICLE_CATS = [
 FUEL_CATS = ["Gasoline","Diesel Fuel","Electricity","Compressed Natural Gas - CNG","Ethanol - E-85"]
 STATE_CATS = ["CA","GA","NY","WA"]
 CITY_TO_STATE = {
-    "Atlanta": "CA",
-    "Los Angeles": "GA",
+    "Atlanta": "GA",
+    "Los Angeles": "CA", 
     "NewYork": "NY",
     "Seattle": "WA"
 }
@@ -221,6 +225,61 @@ def login():
     row=cur.fetchone(); conn.close()
     if row: return jsonify({"status":"ok","token":"fake-jwt"}),200
     return jsonify({"status":"fail"}),401
+
+# ---------- Database Management ----------
+@app.route("/admin/clear_db", methods=["POST"])
+def clear_database():
+    """Clear all data from database tables (except users table for safety)"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        
+        # List of tables to clear (excluding users for safety)
+        tables_to_clear = [
+            "vehicle_classification",
+            "penetration_rate", 
+            "traffic_volume",
+            "projected_traffic",
+            "mfd_params",
+            "results",
+            "vehicle_classification_data",
+            "traffic_volume_data",
+            "projected_traffic_volume"
+        ]
+        
+        cleared_tables = []
+        for table in tables_to_clear:
+            try:
+                cur.execute(f"DELETE FROM {table}")
+                rows_affected = cur.rowcount
+                cleared_tables.append({"table": table, "rows_deleted": rows_affected})
+            except sqlite3.OperationalError as e:
+                # Table might not exist, continue with others
+                cleared_tables.append({"table": table, "error": str(e)})
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Database cleared successfully",
+            "cleared_tables": cleared_tables
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error", 
+            "message": f"Failed to clear database: {str(e)}"
+        }), 500
+
+@app.route("/admin/transaction_id", methods=["GET"])
+def get_transaction_id():
+    """Get the current global transaction ID being used"""
+    return jsonify({
+        "transaction_id": GLOBAL_TRANSACTION_ID,
+        "latest_transaction_id": LATEST_TRANSACTION_ID,
+        "message": "This is the consistent transaction ID used for all operations"
+    }), 200
 
 # ---------- Upload (CSV/Excel into DB) ----------
 def save_to_db(table, df):
@@ -296,7 +355,7 @@ def download():
                      as_attachment=True,download_name="results.csv")
 
 
-LATEST_TRANSACTION_ID = None  
+LATEST_TRANSACTION_ID = GLOBAL_TRANSACTION_ID  # Initialize with global transaction ID
 @app.route("/upload/<type>", methods=["POST"])
 def upload_vehicle_data(type):
     global LATEST_TRANSACTION_ID
@@ -306,7 +365,8 @@ def upload_vehicle_data(type):
         "vehicle_classification",
         "penetration_rate",
         "traffic_volume",
-        "projected_traffic"
+        "projected_traffic",
+        "mfd_params"
     }
     if type not in valid:
         return jsonify({"error": "invalid type"}), 400
@@ -315,16 +375,13 @@ def upload_vehicle_data(type):
     transaction_id = request.form.get("transaction_id")
 
     if type == "vehicle_classification":
-        # Always create a fresh transaction_id
-        transaction_id = str(uuid.uuid4())
+        # Use global consistent transaction_id
+        transaction_id = GLOBAL_TRANSACTION_ID
         LATEST_TRANSACTION_ID = transaction_id  # store globally for reuse
     else:
-        # For other uploads, reuse or require transaction_id
+        # For other uploads, use global transaction_id or provided one
         if not transaction_id:
-            if LATEST_TRANSACTION_ID:
-                transaction_id = LATEST_TRANSACTION_ID  # reuse last created
-            else:
-                return jsonify({"error": "transaction_id is required (no vehicle_classification uploaded yet)"}), 400
+            transaction_id = GLOBAL_TRANSACTION_ID  # use global consistent ID
 
     # Common metadata
     main_city = request.form.get("city_name") or request.form.get("main_city")
@@ -332,46 +389,134 @@ def upload_vehicle_data(type):
     main_year = request.form.get("year")
     user_id = request.form.get("user_id")
 
+    # ---------- Case: mfd_params (JSON payload) ----------
+    if type == "mfd_params":
+        # Handle JSON payload for MFD parameters table
+        data = request.get_json(force=True) or {}
+        city = data.get("city")
+        base_year = data.get("base_year")
+        mfd_table_data = data.get("mfd_table_data", [])
+        mfd_table_headers = data.get("mfd_table_headers", [])
+        
+        if not mfd_table_data:
+            return jsonify({"error": "mfd_table_data is required"}), 400
+            
+        # Convert table data to DataFrame
+        df = pd.DataFrame(mfd_table_data, columns=mfd_table_headers)
+        
+        # Add metadata
+        df["city"] = city
+        df["base_year"] = base_year
+        df["transaction_id"] = transaction_id
+        
+        save_to_db_safe("mfd_params", df)
+        
+        return jsonify({
+            "status": "ok",
+            "rows": len(df),
+            "transaction_id": transaction_id
+        })
+
     # ---------- Case: traffic_volume + mfd_params together ----------
     if type == "traffic_volume":
+        print(f"[DEBUG] Processing traffic_volume upload")
+        print(f"[DEBUG] Transaction ID: {transaction_id}")
+        print(f"[DEBUG] Main city: {main_city}")
+        
         file1 = request.files.get("file1")
         file2 = request.files.get("file2")
+        print(f"[DEBUG] File1: {file1.filename if file1 else 'None'}")
+        print(f"[DEBUG] File2: {file2.filename if file2 else 'None'}")
+        
         if file1 is None or file2 is None:
             return jsonify({"error": "file1 and file2 are required"}), 400
 
         # --- Process file1 (traffic_volume) ---
         df1 = pd.read_csv(file1) if file1.filename.endswith(".csv") else pd.read_excel(file1)
-        hour_cols = [c for c in df1.columns if c.lower().startswith("hour")]
-        df1_long = df1.melt(
-            id_vars=["VehicleType", "base year "],
-            value_vars=hour_cols,
-            var_name="hour",
-            value_name="volume"
-        )
-        df1_long.rename(columns={"base year ": "BaseYear"}, inplace=True)
-        df1_long["city"] = main_city
-        df1_long["transaction_id"] = transaction_id
-        df1_long["user_id"] = user_id
-        save_to_db_safe("traffic_volume", df1_long)
+        print(f"[DEBUG] File1 original shape: {df1.shape}")
+        print(f"[DEBUG] File1 original columns: {list(df1.columns)}")
+        
+        # Calculate speed from distance and time if available
+        if "Distance" in df1.columns and "Time" in df1.columns:
+            df1["Speed"] = df1["Distance"] / df1["Time"]
+            print(f"[DEBUG] Calculated Speed column")
+        
+        # Prepare data for traffic_volume_data table
+        df1_processed = df1.copy()
+        df1_processed.rename(columns={
+            "VehicleType": "VehicleType",
+            "base year ": "Year",
+            "Distance": "Distance", 
+            "Time": "Time"
+        }, inplace=True)
+        
+        # Add required columns for traffic_volume_data table
+        df1_processed["TransactionID"] = transaction_id
+        df1_processed["City"] = main_city
+        df1_processed["Tract"] = None  # Set to None if not provided
+        df1_processed["Count"] = None  # Set to None if not provided
+        
+        # Ensure all required columns exist
+        required_columns = ["TransactionID", "City", "Year", "Tract", "VehicleType", "Count", "Distance", "Time", "Speed"]
+        for col in required_columns:
+            if col not in df1_processed.columns:
+                df1_processed[col] = None
+                
+        print(f"[DEBUG] About to save traffic_volume_data with shape: {df1_processed.shape}")
+        save_to_db_safe("traffic_volume_data", df1_processed)
 
         # --- Process file2 (mfd_params) ---
         df2 = pd.read_csv(file2) if file2.filename.endswith(".csv") else pd.read_excel(file2)
-        df2.rename(columns={
-            "VehicleType": "vehicle_type",
-            "Distance": "distance",
-            "Time": "time"
-        }, inplace=True)
-        df2["tract"] = None
-        df2["city"] = main_city
-        df2["transaction_id"] = transaction_id
-        save_to_db_safe("mfd_params", df2)
+        print(f"[DEBUG] File2 (MFD) original shape: {df2.shape}")
+        print(f"[DEBUG] File2 (MFD) original columns: {list(df2.columns)}")
+        print(f"[DEBUG] File2 (MFD) sample data:\n{df2.head()}")
+        
+        # The mfd_params table expects: tract, param_key, param_value
+        # We need to transform the data to match this schema
+        
+        # If the file has multiple columns that represent different parameters,
+        # we need to melt it into key-value pairs
+        if len(df2.columns) > 1:
+            # Assume first column is tract or identifier, rest are parameters
+            id_cols = [df2.columns[0]] if len(df2.columns) > 1 else []
+            value_cols = [col for col in df2.columns if col not in id_cols]
+            
+            # Melt the dataframe to convert columns to rows
+            df2_melted = pd.melt(df2, id_vars=id_cols, value_vars=value_cols, 
+                               var_name='param_key', value_name='param_value')
+            
+            # Set tract column
+            if id_cols:
+                df2_melted['tract'] = df2_melted[id_cols[0]].astype(str)
+                df2_melted = df2_melted.drop(columns=id_cols)
+            else:
+                df2_melted['tract'] = None
+                
+            df2_processed = df2_melted
+        else:
+            # Single column case - treat as param_value with generic key
+            df2_processed = pd.DataFrame({
+                'tract': None,
+                'param_key': 'value',
+                'param_value': df2.iloc[:, 0]
+            })
+        
+        print(f"[DEBUG] File2 (MFD) processed shape: {df2_processed.shape}")
+        print(f"[DEBUG] File2 (MFD) processed columns: {list(df2_processed.columns)}")
+        print(f"[DEBUG] File2 (MFD) processed sample:\n{df2_processed.head()}")
+        
+        save_to_db_safe("mfd_params", df2_processed)
 
         return jsonify({
             "status": "ok",
             "transaction_id": transaction_id,
             "rows": {
-                "traffic_volume": len(df1_long),
-                "mfd_params": len(df2)
+                "traffic_volume_data": len(df1_processed),
+                "mfd_params": len(df2_processed)
+            },
+            "debug": {
+                "traffic_columns": list(df1_processed.columns),
+                "mfd_columns": list(df2_processed.columns)
             }
         })
 
@@ -423,15 +568,41 @@ def upload_vehicle_data(type):
     })
 
 def save_to_db_safe(table, df):
+    print(f"[DEBUG] Saving to table: {table}")
+    print(f"[DEBUG] DataFrame shape: {df.shape}")
+    print(f"[DEBUG] DataFrame columns: {list(df.columns)}")
+    print(f"[DEBUG] Sample data:\n{df.head()}")
+    
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
     cur.execute(f"PRAGMA table_info({table})")
     db_cols = [col[1] for col in cur.fetchall()]
-    df = df[[col for col in df.columns if col in db_cols]]
+    print(f"[DEBUG] Database columns for {table}: {db_cols}")
+    
+    df_filtered = df[[col for col in df.columns if col in db_cols]]
+    print(f"[DEBUG] Filtered DataFrame columns: {list(df_filtered.columns)}")
+    
     for col in db_cols:
-        if col not in df.columns:
-            df[col] = None
-    df.to_sql(table, conn, if_exists="append", index=False)
+        if col not in df_filtered.columns:
+            df_filtered[col] = None
+            print(f"[DEBUG] Added missing column: {col}")
+    
+    print(f"[DEBUG] Final DataFrame before saving:\n{df_filtered.head()}")
+    
+    try:
+        rows_added = df_filtered.to_sql(table, conn, if_exists="append", index=False)
+        print(f"[DEBUG] Successfully saved {len(df_filtered)} rows to {table}")
+        
+        # Verify the data was actually saved
+        cur.execute(f"SELECT COUNT(*) FROM {table}")
+        total_count = cur.fetchone()[0]
+        print(f"[DEBUG] Total rows in {table} after save: {total_count}")
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to save to {table}: {str(e)}")
+        conn.close()
+        raise e
+    
     conn.close()
     
     
@@ -454,10 +625,7 @@ def upload_projected_traffic():
         # -------- Transaction ID logic --------
         transaction_id = request.form.get("transaction_id")
         if not transaction_id:
-            if LATEST_TRANSACTION_ID:
-                transaction_id = LATEST_TRANSACTION_ID
-            else:
-                return jsonify({"error": "transaction_id is required (no vehicle_classification uploaded yet)"}), 400
+            transaction_id = GLOBAL_TRANSACTION_ID  # Use global consistent ID
 
         # -------- Parse master CSV --------
         df_csv = pd.read_csv(file_csv) if file_csv.filename.endswith(".csv") else pd.read_excel(file_csv)
@@ -596,7 +764,24 @@ def predict_emissions():
             conn.close()
 
             if not rows:
-                return jsonify({"error": f"No traffic data found for transaction_id {transaction_id}"}), 404
+                # Check if any traffic data exists at all
+                cur_check = conn.cursor()
+                cur_check.execute("SELECT COUNT(*) FROM traffic_volume_data")
+                total_count = cur_check.fetchone()[0]
+                cur_check.close()
+                
+                if total_count == 0:
+                    return jsonify({
+                        "error": f"No traffic data found for transaction_id {transaction_id}. Please upload traffic volume data first through the Traffic Volume & Speed step.",
+                        "hint": "Upload traffic volume files in step 3 before making predictions",
+                        "transaction_id": transaction_id
+                    }), 404
+                else:
+                    return jsonify({
+                        "error": f"No traffic data found for transaction_id {transaction_id}. Found {total_count} records with other transaction IDs.",
+                        "hint": "Make sure you're using the correct transaction_id from your uploads",
+                        "transaction_id": transaction_id
+                    }), 404
 
             # Stats selector
             stats_map = {"co2": STATS_AS, "energy": STATS_AS, "nox": STATS_AS,
