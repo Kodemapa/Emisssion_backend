@@ -769,8 +769,8 @@ def predict_emissions():
         fuel_type = data.get("FuelType", "").strip()
         vehicle_type = data.get("VehicleType", "").strip()
         age = data.get("Age", 5)  # Default age if not provided
-        emission_type = data.get("EmissionType", "").strip()  # Optional
-
+        emission_type = data.get("EmissionType", "").strip()  
+        
         # Step 3: Validate the required fields
         if not all([cityname, fuel_type, vehicle_type]):
             return jsonify({"error": f"Missing required fields: city, fuelType, vehicleType"}), 400
@@ -793,10 +793,10 @@ def predict_emissions():
             # Update the payload with the current speed
             payload["Speed"] = speed
             
-            if emission_type=="Brake Wear":
+            if emission_type=="PM2.5 Brake Wear":
                 payload["Vehicle Weight"] = data.get("VehicleWeight", 1500)
-            elif emission_type=="Tire Wear":
-                payload["Road Gradient"] = data.get("RoadGradient", 5) 
+            elif emission_type=="PM2.5 Tire Wear":
+                payload["Road Gradient"] = data.get("RoadGradient", 5)
 
             # Call the `predict_all` function to get predictions for this speed
             predictions = predict_all(payload)
@@ -805,11 +805,11 @@ def predict_emissions():
             if emission_type:
                 # If EmissionType is provided, only return the relevant prediction
                 emission_type_mapping = {
-                    "CO2 Emission": "caCo2",
-                    "Energy Emission": "caTotalEnergyRate",
-                    "NOx Emission": "caNOx",
-                    "Brake Wear": "caPM25BrakeWear",
-                    "Tire Wear": "caPM25TireWear"
+                    "CO2 Emissions": "caCo2",
+                    "Energy Rate": "caTotalEnergyRate",
+                    "NOx": "caNOx",
+                    "PM2.5 Brake Wear": "caPM25Brake",
+                    "PM2.5 Tire Wear": "caPM25Tire"
                 }
 
                 if emission_type not in emission_type_mapping:
@@ -819,10 +819,38 @@ def predict_emissions():
                 prediction_key = emission_type_mapping[emission_type]
                 if prediction_key in predictions:
                     # Adjust units based on emission type
-                    if emission_type == "CO2 Emission":
+                    if emission_type == "CO2 Emissions":
                         unit = "gr/mile"  # Use g/mile for CO2 emission
-                    elif emission_type == "Energy Emission":
-                        unit = "kWh/100km"  # Keep energy emission as kWh/100km (you may adjust if needed)
+                    elif emission_type == "Energy Rate":
+                        SCALING_FACTOR = 0.001
+                        energy_value_kWh_100km = predictions[prediction_key]
+                        energy_value_MWh_mile = (energy_value_kWh_100km / 1000) * (1 / 0.621371)
+                        energy_value_MWh_mile *= SCALING_FACTOR  # Apply scaling factor
+
+                        unit = "MWh/mile"  # Update unit to MWh/mile
+                        
+                        # Prepare the response
+                        response = {
+                            "EmissionType": emission_type,
+                            "PredictedValue": round(energy_value_MWh_mile, 6),
+                            "Unit": unit,
+                            "Speed": speed,
+                            "VehicleType": vehicle_type,
+                        }
+                        all_predictions.append(response)
+                        continue
+                    elif emission_type == "NOx" or emission_type == "PM2.5 Brake Wear"  or emission_type == "PM2.5 Tire Wear":
+                        prediction_value = predictions[prediction_key] * 100
+                        unit="gr/mile" 
+                        response = {
+                            "EmissionType": emission_type,
+                            "PredictedValue": round(prediction_value, 6),
+                            "Unit": unit,
+                            "Speed": speed,
+                            "VehicleType": vehicle_type,
+                        }
+                        all_predictions.append(response)
+                        continue
                     else:
                         unit = "g/km"  # Use g/km for other emissions (you can adjust this as needed)
 
