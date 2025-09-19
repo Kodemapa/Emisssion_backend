@@ -8,6 +8,8 @@ import torch.nn as nn
 import io, os
 import json
 import uuid
+from models import ModifiedNet
+import random
 
 # ---------- Allow safe sklearn globals for torch.load ----------
 from sklearn.compose import ColumnTransformer
@@ -215,6 +217,68 @@ for st in STATE_CATS:
     load_checkpoint_into(models[st]["brake"], f"models/{st}/best_model_{st}PM25Brake.pth")
     load_checkpoint_into(models[st]["tire"], f"models/{st}/best_model_{st}PM25Tire.pth")
     for m in models[st].values(): m.eval()
+
+
+
+def load_model(file_name, input_features):
+    base_path = os.path.join(os.path.dirname(__file__), "ml_models")
+    model_path = os.path.join(base_path, file_name)
+
+    # Register ModifiedNet to resolve deserialization
+    import sys
+    sys.modules["__main__"].ModifiedNet = ModifiedNet
+
+    # Load the checkpoint
+    checkpoint = torch.load(model_path, map_location=torch.device("cpu"))
+
+    # Initialize the model architecture
+    model = ModifiedNet(input_features)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval() 
+
+    return {
+        "model": model,
+        "preprocessor": checkpoint["preprocessor"],
+        "target_scaler": checkpoint.get("power_transformer", None),
+    }
+
+# Load all models with specific input features
+models = {
+    "caCo2": load_model("best_model_CACO2.pth", input_features=19),
+    "caTotalEnergyRate": load_model("best_model_CAEnergy.pth", input_features=20),
+    "caNOx": load_model("best_model_CANOx.pth", input_features=19),
+    "caPM25Brake": load_model("best_model_CAPM25Brake.pth", input_features=20),
+    "caPM25Tire": load_model("best_model_CAPM25Tire.pth", input_features=20),
+}
+
+def predict_all(inputs):
+    predictions = {}
+
+    for key, model_info in models.items():
+        model = model_info["model"]
+        preprocessor = model_info["preprocessor"]
+        target_scaler = model_info["target_scaler"]
+
+        # Preprocess the input
+        df = pd.DataFrame([inputs])  # Convert input to DataFrame
+        processed_input = preprocessor.transform(df)  # Preprocess the input data
+
+        # Convert to tensor (ensure compatibility for sparse arrays)
+        if hasattr(processed_input, "toarray"):  # Handle sparse matrices
+            input_tensor = torch.tensor(processed_input.toarray(), dtype=torch.float32)
+        else:
+            input_tensor = torch.tensor(processed_input, dtype=torch.float32)
+
+        # Predict the output
+        with torch.no_grad():
+            raw_prediction = model(input_tensor)  # Predict using the model
+            prediction = target_scaler.inverse_transform(raw_prediction.numpy())  # Scale back to original
+
+        # Store the prediction
+        predictions[key] = float(prediction[0][0])  # Extract the predicted value
+
+    return predictions
+
 
 # ---------- Auth ----------
 @app.route("/auth/login",methods=["POST"])
@@ -690,154 +754,105 @@ def upload_projected_traffic():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
+
 @app.route("/predict_emissions", methods=["POST"])
 def predict_emissions():
     try:
-        # Collect form data
-        data = request.get_json()
+        # Step 1: Get the input data from the request
+        data = request.get_json(force=True)
 
         if not data:
             return jsonify({"error": "No JSON payload received"}), 400
 
-        # If frontend sends a list, loop through it
-        if isinstance(data, list):
-            requests_list = data
-        else:
-            requests_list = [data]
+        # Step 2: Extract required fields from the payload
+        cityname = data.get("City", "").strip()
+        fuel_type = data.get("FuelType", "").strip()
+        vehicle_type = data.get("VehicleType", "").strip()
+        age = data.get("Age", 5)  # Default age if not provided
+        emission_type = data.get("EmissionType", "").strip()  # Optional
 
-        results_all = []
+        # Step 3: Validate the required fields
+        if not all([cityname, fuel_type, vehicle_type]):
+            return jsonify({"error": f"Missing required fields: city, fuelType, vehicleType"}), 400
 
-        for req in requests_list:
-            prediction_type_raw = req.get("emissionType", "").strip()
-            cityname = req.get("city", "").strip()
-            fuel_type = req.get("fuelType", "").strip()
-            age = req.get("vehicleAge")
-            transaction_id = req.get("transaction_id", "").strip() if req.get("transaction_id") else None
-            vehicle_type = req.get("vehicleType", "").strip()
+        # Step 4: Get the dynamic speed from the predefined list
+        speeds = [10, 20, 30, 40, 50, 60, 70]  # Get a random speed from the list
 
-            # Validate required
-            if not all([prediction_type_raw, cityname, fuel_type]):
-                return jsonify({"error": "Missing required parameters"}), 400
+        # Step 5: Prepare the input data for the prediction
+        payload = {
+            "Age": age,
+            "Vehicle Type": vehicle_type,
+            "Fuel Type": fuel_type,
+            "State": data.get("State", "CA")  # Default to 'CA' if no state provided
+        }
 
-            # Normalize prediction_type
-            prediction_map = {
-                "co2 emission": "co2",
-                "CO2 Emissions": "co2",
-                "co2 emissions": "co2",
-                "energy rate": "energy",
-                "nox": "nox",
-                "pm2.5 brake wear": "brake",
-                "pm2.5 tire wear": "tire"
-            }
-            prediction_type = prediction_map.get(prediction_type_raw.lower())
-            if not prediction_type:
-                return jsonify({"error": f"Invalid prediction_type: {prediction_type_raw}"}), 400
+        all_predictions = []
 
-            # Map city to state
-            state = CITY_TO_STATE.get(cityname, None)
-            if not state:
-                return jsonify({"error": f"City '{cityname}' not mapped to any state"}), 400
-            if state not in models:
-                return jsonify({"error": f"No models found for state '{state}'"}), 400
+        # Step 7: Loop over the speed values and call `predict_all` for each speed
+        for speed in speeds:
+            # Update the payload with the current speed
+            payload["Speed"] = speed
+            
+            if emission_type=="Brake Wear":
+                payload["Vehicle Weight"] = data.get("VehicleWeight", 1500)
+            elif emission_type=="Tire Wear":
+                payload["Road Gradient"] = data.get("RoadGradient", 5) 
 
-            # Validate age
-            try:
-                age = age if age else 5
-            except (ValueError, TypeError):
-                return jsonify({"error": "Invalid age value"}), 400
+            # Call the `predict_all` function to get predictions for this speed
+            predictions = predict_all(payload)
 
-            # Validate vehicle_type if provided
-            if vehicle_type and vehicle_type not in VEHICLE_CATS:
-                return jsonify({"error": f"Invalid vehicle_type: {vehicle_type}"}), 400
+            # Step 8: Prepare the response with the predictions and current speed
+            if emission_type:
+                # If EmissionType is provided, only return the relevant prediction
+                emission_type_mapping = {
+                    "CO2 Emission": "caCo2",
+                    "Energy Emission": "caTotalEnergyRate",
+                    "NOx Emission": "caNOx",
+                    "Brake Wear": "caPM25BrakeWear",
+                    "Tire Wear": "caPM25TireWear"
+                }
 
-            # Fetch traffic data
-            conn = sqlite3.connect(DB_FILE)
-            cur = conn.cursor()
-            query = """
-                SELECT Speed 
-                FROM traffic_volume_data 
-                WHERE TransactionID = ?
-            """
-            params = [transaction_id]
-            cur.execute(query, params)
-            rows = cur.fetchall()
-            conn.close()
+                if emission_type not in emission_type_mapping:
+                    return jsonify({"error": f"Invalid EmissionType: {emission_type}. Valid types are {', '.join(emission_type_mapping.keys())}."}), 400
 
-            if not rows:
-                # Check if any traffic data exists at all
-                cur_check = conn.cursor()
-                cur_check.execute("SELECT COUNT(*) FROM traffic_volume_data")
-                total_count = cur_check.fetchone()[0]
-                cur_check.close()
-                
-                if total_count == 0:
-                    return jsonify({
-                        "error": f"No traffic data found for transaction_id {transaction_id}. Please upload traffic volume data first through the Traffic Volume & Speed step.",
-                        "hint": "Upload traffic volume files in step 3 before making predictions",
-                        "transaction_id": transaction_id
-                    }), 404
-                else:
-                    return jsonify({
-                        "error": f"No traffic data found for transaction_id {transaction_id}. Found {total_count} records with other transaction IDs.",
-                        "hint": "Make sure you're using the correct transaction_id from your uploads",
-                        "transaction_id": transaction_id
-                    }), 404
+                # Get the prediction for the specific emission type
+                prediction_key = emission_type_mapping[emission_type]
+                if prediction_key in predictions:
+                    # Adjust units based on emission type
+                    if emission_type == "CO2 Emission":
+                        unit = "gr/mile"  # Use g/mile for CO2 emission
+                    elif emission_type == "Energy Emission":
+                        unit = "kWh/100km"  # Keep energy emission as kWh/100km (you may adjust if needed)
+                    else:
+                        unit = "g/km"  # Use g/km for other emissions (you can adjust this as needed)
 
-            # Stats selector
-            stats_map = {"co2": STATS_AS, "energy": STATS_AS, "nox": STATS_AS,
-                         "brake": STATS_WS, "tire": STATS_SG}
+                    response = {
+                        "EmissionType": emission_type,
+                        "PredictedValue": round(predictions[prediction_key], 6),
+                        "Unit": unit,
+                        "Speed": speed,
+                        "VehicleType": vehicle_type,
+                    }
+                    all_predictions.append(response)
 
-            # Prediction loop
-            results = []
-            for row in rows:
-                speed = row[0]
+            else:
+                # If no EmissionType is provided, return all predictions
+                response = {
+                    "caCo2": predictions["caCo2"],
+                    "caTotalEnergyRate": predictions["caTotalEnergyRate"],
+                    "caNOx": predictions["caNOx"],
+                    "caPM25BrakeWear": predictions["caPM25Brake"],
+                    "caPM25TireWear": predictions["caPM25Tire"],
+                    "speed": speed  # Include the current speed
+                }
+                all_predictions.append(response)
 
-                if prediction_type in ["co2", "energy", "nox"]:
-                    payload = {"Age": age,"Speed": speed,"Vehicle Type": vehicle_type,
-                               "Fuel Type": fuel_type,"State": state}
-                elif prediction_type == "brake":
-                    payload = {"Vehicle Weight": 1500,"Speed": speed,"Vehicle Type": vehicle_type,
-                               "Fuel Type": fuel_type,"State": state}
-                elif prediction_type == "tire":
-                    payload = {"Speed": speed,"Road Gradient": 5,"Vehicle Type": vehicle_type,
-                               "Fuel Type": fuel_type,"State": state}
-
-                x, _ = preprocess(payload, stats_map[prediction_type])
-                with torch.no_grad():
-                    y = models[state][prediction_type](x).item()
-
-                results.append({
-                    "vehicle_type": vehicle_type,
-                    "speed": speed,
-                    "prediction": round(float(y), 6)
-                })
-
-            # Final response for this request
-            units = {
-                "co2": "g/km", "energy": "kWh/100km", "nox": "g/km",
-                "brake": "g/km", "tire": "g/km"
-            }
-            display_names = {
-                "co2": "CO2 Emissions", "energy": "Energy Rate", "nox": "NOx",
-                "brake": "PM2.5 Brake Wear", "tire": "PM2.5 Tire Wear"
-            }
-
-            results_all.append({
-                "city": cityname,
-                "state": state,
-                "transaction_id": transaction_id,
-                "prediction_type": display_names[prediction_type],
-                "unit": units[prediction_type],
-                "results": results
-            })
-
-        return jsonify(results_all)
+        return jsonify(all_predictions), 200
 
     except Exception as e:
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
-    
-    
-    
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 400
+
 @app.route("/predict_consumption", methods=["POST"])
 def predict_consumption():
     try:
