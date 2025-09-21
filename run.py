@@ -897,8 +897,6 @@ def predict_consumption():
         state = CITY_TO_STATE.get(cityname, None)
         if not state:
             return jsonify({"error": f"City '{cityname}' not mapped to any state"}), 400
-        if state not in models:
-            return jsonify({"error": f"No models found for state '{state}'"}), 400
 
         # Validate age
         try:
@@ -910,14 +908,27 @@ def predict_consumption():
         if vehicle_type and vehicle_type not in VEHICLE_CATS:
             return jsonify({"error": f"Invalid vehicle_type: {vehicle_type}"}), 400
 
-        # Preprocess for energy model
-        payload = {"Age": age, "Speed": speed, "Vehicle Type": vehicle_type,
-                   "Fuel Type": fuel_type, "State": state}
-        x, _ = preprocess(payload, STATS_AS)
+        # Prepare payload using the same format as predict_emissions
+        payload = {
+            "Age": age,
+            "Speed": speed,
+            "Vehicle Type": vehicle_type,
+            "Fuel Type": fuel_type,
+            "State": "GA"  # Always use GA for these models (same as predict_emissions)
+        }
 
-        # Predict consumption
-        with torch.no_grad():
-            consumption = models[state]["energy"](x).item()
+        # Use the energy model key (same approach as predict_emissions)
+        energy_model_key = "gaTotalEnergyRate"
+        
+        # Check if the model exists
+        if energy_model_key not in models:
+            return jsonify({"error": f"Energy model '{energy_model_key}' not found"}), 400
+
+        # Predict consumption using predict_one (same as predict_emissions)
+        try:
+            consumption = predict_one(payload, energy_model_key)
+        except Exception as e:
+            return jsonify({"error": f"Prediction failed: {str(e)}"}), 400
 
         # Fuel consumption conversion (optional)
         fuel_consumption = None
@@ -930,7 +941,7 @@ def predict_consumption():
 
         return jsonify({
             "city": cityname,
-            "state": state,
+            "state": "GA",  # Always GA since we're using GA models
             "vehicle_type": vehicle_type,
             "fuel_type": fuel_type,
             "age": age,
