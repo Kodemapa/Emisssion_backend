@@ -219,7 +219,6 @@ for st in STATE_CATS:
     for m in models[st].values(): m.eval()
 
 
-
 def load_model(file_name, input_features):
     base_path = os.path.join(os.path.dirname(__file__), "ml_models")
     model_path = os.path.join(base_path, file_name)
@@ -229,55 +228,51 @@ def load_model(file_name, input_features):
     sys.modules["__main__"].ModifiedNet = ModifiedNet
 
     # Load the checkpoint
-    checkpoint = torch.load(model_path, map_location=torch.device("cpu"))
+    try:
+        checkpoint = torch.load(model_path, map_location=torch.device("cpu"))
+    except Exception:
+        checkpoint = torch.load(model_path, map_location=torch.device("cpu"), weights_only=False)
 
     # Initialize the model architecture
     model = ModifiedNet(input_features)
     model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval() 
+    model.eval()  
 
     return {
         "model": model,
         "preprocessor": checkpoint["preprocessor"],
-        "target_scaler": checkpoint.get("power_transformer", None),
+        "target_scaler": checkpoint.get("target_scaler", checkpoint.get("power_transformer", None)),
     }
 
 # Load all models with specific input features
 models = {
-    "caCo2": load_model("best_model_CACO2.pth", input_features=19),
-    "caTotalEnergyRate": load_model("best_model_CAEnergy.pth", input_features=20),
-    "caNOx": load_model("best_model_CANOx.pth", input_features=19),
-    "caPM25Brake": load_model("best_model_CAPM25Brake.pth", input_features=20),
-    "caPM25Tire": load_model("best_model_CAPM25Tire.pth", input_features=20),
+    "gaCo2": load_model("best_model_GACO2.pth", input_features=19),
+    "gaTotalEnergyRate": load_model("best_model_GAEnergy.pth", input_features=20),
+    "gaNOx": load_model("best_model_GANOx.pth", input_features=19),
+    "gaPM25BrakeWear": load_model("best_model_GAPM25Brake.pth", input_features=20),
+    "gaPM25TireWear": load_model("best_model_GAPM25Tire.pth", input_features=19),
 }
 
-def predict_all(inputs):
-    predictions = {}
+def predict_one(inputs, model_key):
+    if model_key not in models:
+        raise ValueError(f"Model key '{model_key}' not found.")
+    model_info = models[model_key]
+    model = model_info["model"]
+    preprocessor = model_info["preprocessor"]
+    target_scaler = model_info["target_scaler"]
 
-    for key, model_info in models.items():
-        model = model_info["model"]
-        preprocessor = model_info["preprocessor"]
-        target_scaler = model_info["target_scaler"]
+    df = pd.DataFrame([inputs])
+    processed_input = preprocessor.transform(df)
+    if hasattr(processed_input, "toarray"):
+        input_tensor = torch.tensor(processed_input.toarray(), dtype=torch.float32)
+    else:
+        input_tensor = torch.tensor(processed_input, dtype=torch.float32)
 
-        # Preprocess the input
-        df = pd.DataFrame([inputs])  # Convert input to DataFrame
-        processed_input = preprocessor.transform(df)  # Preprocess the input data
+    with torch.no_grad():
+        raw_prediction = model(input_tensor)
+        prediction = target_scaler.inverse_transform(raw_prediction.numpy())
 
-        # Convert to tensor (ensure compatibility for sparse arrays)
-        if hasattr(processed_input, "toarray"):  # Handle sparse matrices
-            input_tensor = torch.tensor(processed_input.toarray(), dtype=torch.float32)
-        else:
-            input_tensor = torch.tensor(processed_input, dtype=torch.float32)
-
-        # Predict the output
-        with torch.no_grad():
-            raw_prediction = model(input_tensor)  # Predict using the model
-            prediction = target_scaler.inverse_transform(raw_prediction.numpy())  # Scale back to original
-
-        # Store the prediction
-        predictions[key] = float(prediction[0][0])  # Extract the predicted value
-
-    return predictions
+    return float(prediction[0][0])
 
 
 # ---------- Auth ----------
@@ -783,80 +778,79 @@ def predict_emissions():
             "Age": age,
             "Vehicle Type": vehicle_type,
             "Fuel Type": fuel_type,
-            "State": data.get("State", "CA")  # Default to 'CA' if no state provided
+            "State": "GA"  # Always use GA for these models
         }
 
         all_predictions = []
 
-        # Step 7: Loop over the speed values and call `predict_all` for each speed
+        emission_type_mapping = {
+            "CO2 Emissions": "gaCo2",
+            "Energy Rate": "gaTotalEnergyRate",
+            "NOx": "gaNOx",
+            "PM2.5 Brake Wear": "gaPM25BrakeWear",
+            "PM2.5 Tire Wear": "gaPM25TireWear"
+        }
+
+        # Step 7: Loop over the speed values and call predict_one for each speed
         for speed in speeds:
-            # Update the payload with the current speed
             payload["Speed"] = speed
-            
-            if emission_type=="PM2.5 Brake Wear":
+            if emission_type == "PM2.5 Brake Wear":
                 payload["Vehicle Weight"] = data.get("VehicleWeight", 1500)
-            elif emission_type=="PM2.5 Tire Wear":
+            elif emission_type == "PM2.5 Tire Wear":
                 payload["Road Gradient"] = data.get("RoadGradient", 5)
 
-            # Call the `predict_all` function to get predictions for this speed
-            predictions = predict_all(payload)
-
-            # Step 8: Prepare the response with the predictions and current speed
             if emission_type:
-                # If EmissionType is provided, only return the relevant prediction
-                emission_type_mapping = {
-                    "CO2 Emissions": "caCo2",
-                    "Energy Rate": "caTotalEnergyRate",
-                    "NOx": "caNOx",
-                    "PM2.5 Brake Wear": "caPM25Brake",
-                    "PM2.5 Tire Wear": "caPM25Tire"
-                }
-
                 if emission_type not in emission_type_mapping:
                     return jsonify({"error": f"Invalid EmissionType: {emission_type}. Valid types are {', '.join(emission_type_mapping.keys())}."}), 400
-
-                # Get the prediction for the specific emission type
                 prediction_key = emission_type_mapping[emission_type]
-                if prediction_key in predictions:
-                    # Adjust units based on emission type
-                    if emission_type == "CO2 Emissions":
-                        unit = "gr/mile"  # Use g/mile for CO2 emission
-                    elif emission_type == "Energy Rate":
-                        SCALING_FACTOR = 0.001
-                        energy_value_kWh_100km = predictions[prediction_key]
-                        energy_value_MWh_mile = (energy_value_kWh_100km / 1000) * (1 / 0.621371)
-                        energy_value_MWh_mile *= SCALING_FACTOR  # Apply scaling factor
+                try:
+                    prediction_value = predict_one(payload, prediction_key)
+                except Exception as e:
+                    return jsonify({"error": str(e)}), 400
 
-                        unit = "MWh/mile"  # Update unit to MWh/mile
-                        
-                        # Prepare the response
-                        response = {
-                            "EmissionType": emission_type,
-                            "PredictedValue": round(energy_value_MWh_mile, 6),
-                            "Unit": unit,
-                            "Speed": speed,
-                            "VehicleType": vehicle_type,
-                        }
-                        all_predictions.append(response)
-                        continue
-                    elif emission_type == "NOx" or emission_type == "PM2.5 Brake Wear"  or emission_type == "PM2.5 Tire Wear":
-                        prediction_value = predictions[prediction_key] * 100
-                        unit="gr/mile" 
-                        response = {
-                            "EmissionType": emission_type,
-                            "PredictedValue": round(prediction_value, 6),
-                            "Unit": unit,
-                            "Speed": speed,
-                            "VehicleType": vehicle_type,
-                        }
-                        all_predictions.append(response)
-                        continue
-                    else:
-                        unit = "g/km"  # Use g/km for other emissions (you can adjust this as needed)
-
+                if emission_type == "CO2 Emissions":
+                    unit = "gr/mile"
                     response = {
                         "EmissionType": emission_type,
-                        "PredictedValue": round(predictions[prediction_key], 6),
+                        "PredictedValue": round(prediction_value, 6),
+                        "Unit": unit,
+                        "Speed": speed,
+                        "VehicleType": vehicle_type,
+                    }
+                    all_predictions.append(response)
+                    continue
+                elif emission_type == "Energy Rate":
+                    SCALING_FACTOR = 0.001
+                    energy_value_kWh_100km = prediction_value
+                    energy_value_MWh_mile = (energy_value_kWh_100km / 1000) * (1 / 0.621371)
+                    energy_value_MWh_mile *= SCALING_FACTOR
+                    unit = "MWh/mile"
+                    response = {
+                        "EmissionType": emission_type,
+                        "PredictedValue": round(energy_value_MWh_mile, 6),
+                        "Unit": unit,
+                        "Speed": speed,
+                        "VehicleType": vehicle_type,
+                    }
+                    all_predictions.append(response)
+                    continue
+                elif emission_type == "NOx" or emission_type == "PM2.5 Brake Wear" or emission_type == "PM2.5 Tire Wear":
+                    prediction_value = prediction_value * 100
+                    unit = "gr/mile"
+                    response = {
+                        "EmissionType": emission_type,
+                        "PredictedValue": round(prediction_value, 6),
+                        "Unit": unit,
+                        "Speed": speed,
+                        "VehicleType": vehicle_type,
+                    }
+                    all_predictions.append(response)
+                    continue
+                else:
+                    unit = "g/km"
+                    response = {
+                        "EmissionType": emission_type,
+                        "PredictedValue": round(prediction_value, 6),
                         "Unit": unit,
                         "Speed": speed,
                         "VehicleType": vehicle_type,
@@ -864,16 +858,15 @@ def predict_emissions():
                     all_predictions.append(response)
 
             else:
-                # If no EmissionType is provided, return all predictions
-                response = {
-                    "caCo2": predictions["caCo2"],
-                    "caTotalEnergyRate": predictions["caTotalEnergyRate"],
-                    "caNOx": predictions["caNOx"],
-                    "caPM25BrakeWear": predictions["caPM25Brake"],
-                    "caPM25TireWear": predictions["caPM25Tire"],
-                    "speed": speed  # Include the current speed
-                }
-                all_predictions.append(response)
+                # If no EmissionType is provided, return all predictions for all models
+                result = {}
+                for key in models.keys():
+                    try:
+                        result[key] = predict_one(payload, key)
+                    except Exception as e:
+                        result[key] = None
+                result["speed"] = speed
+                all_predictions.append(result)
 
         return jsonify(all_predictions), 200
 
@@ -955,4 +948,4 @@ def predict_consumption():
 
     
 if __name__=="__main__":
-    app.run(host="0.0.0.0",port=5000,debug=True)
+    app.run(host="0.0.0.0",port=5003,debug=True)
