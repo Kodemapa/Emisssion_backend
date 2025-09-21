@@ -173,7 +173,7 @@ VEHICLE_CATS = [
 FUEL_CATS = ["Gasoline","Diesel Fuel","Electricity","Compressed Natural Gas - CNG","Ethanol - E-85"]
 STATE_CATS = ["CA","GA","NY","WA"]
 CITY_TO_STATE = {
-    "Atlanta": "GA",
+    "Atlanta": "CA",
     "Los Angeles": "CA", 
     "NewYork": "NY",
     "Seattle": "WA"
@@ -243,7 +243,7 @@ def load_model(file_name, input_features):
     }
 
 # Load all models with specific input features
-models = {
+ca_models = {
     "caCo2": load_model("best_model_CACO2.pth", input_features=19),
     "caTotalEnergyRate": load_model("best_model_CAEnergy.pth", input_features=20),
     "caNOx": load_model("best_model_CANOx.pth", input_features=19),
@@ -254,7 +254,7 @@ models = {
 def predict_all(inputs):
     predictions = {}
 
-    for key, model_info in models.items():
+    for key, model_info in ca_models.items():
         model = model_info["model"]
         preprocessor = model_info["preprocessor"]
         target_scaler = model_info["target_scaler"]
@@ -765,11 +765,11 @@ def predict_emissions():
             return jsonify({"error": "No JSON payload received"}), 400
 
         # Step 2: Extract required fields from the payload
-        cityname = data.get("City", "").strip()
-        fuel_type = data.get("FuelType", "").strip()
-        vehicle_type = data.get("VehicleType", "").strip()
-        age = data.get("Age", 5)  # Default age if not provided
-        emission_type = data.get("EmissionType", "").strip()  
+        cityname = data.get("city", "").strip()
+        fuel_type = data.get("fuelType", "").strip()
+        vehicle_type = data.get("vehicleType", "").strip()
+        age = data.get("vehicleAge", 5)  # Default age if not provided
+        emission_type = data.get("emissionType", "").strip()  
         
         # Step 3: Validate the required fields
         if not all([cityname, fuel_type, vehicle_type]):
@@ -894,7 +894,7 @@ def predict_consumption():
         fuel_type = data.get("fuelType", "").strip()
         vehicle_type = data.get("vehicleType", "").strip()
         age = data.get("vehicleAge", 5)
-        speed = data.get("speed", 60)
+        speeds = [10, 20, 30, 40, 50, 60, 70]
 
         # Validate required
         if not all([cityname, fuel_type, vehicle_type]):
@@ -904,8 +904,10 @@ def predict_consumption():
         state = CITY_TO_STATE.get(cityname, None)
         if not state:
             return jsonify({"error": f"City '{cityname}' not mapped to any state"}), 400
+        
+        # Check if state exists in regional models
         if state not in models:
-            return jsonify({"error": f"No models found for state '{state}'"}), 400
+            return jsonify({"error": f"No models found for state '{state}'. Available states: {list(models.keys())}"}), 400
 
         # Validate age
         try:
@@ -917,36 +919,42 @@ def predict_consumption():
         if vehicle_type and vehicle_type not in VEHICLE_CATS:
             return jsonify({"error": f"Invalid vehicle_type: {vehicle_type}"}), 400
 
-        # Preprocess for energy model
-        payload = {"Age": age, "Speed": speed, "Vehicle Type": vehicle_type,
-                   "Fuel Type": fuel_type, "State": state}
-        x, _ = preprocess(payload, STATS_AS)
+        all_results = []
+        
+        for speed in speeds:
+            # Preprocess for energy model
+            payload = {"Age": age, "Speed": speed, "Vehicle Type": vehicle_type,
+                       "Fuel Type": fuel_type, "State": state}
+            x, _ = preprocess(payload, STATS_AS)
 
-        # Predict consumption
-        with torch.no_grad():
-            consumption = models[state]["energy"](x).item()
+            # Predict consumption using regional models
+            with torch.no_grad():
+                consumption = models[state]["energy"](x).item()
 
-        # Fuel consumption conversion (optional)
-        fuel_consumption = None
-        if fuel_type == "Gasoline":
-            fuel_consumption = round(consumption / 8.9, 6)  # L/100km
-        elif fuel_type == "Diesel Fuel":
-            fuel_consumption = round(consumption / 10.0, 6)  # L/100km
-        elif fuel_type == "Electricity":
-            fuel_consumption = None  # Already in kWh
+            # Fuel consumption conversion (optional)
+            fuel_consumption = None
+            if fuel_type == "Gasoline":
+                fuel_consumption = round(consumption / 8.9, 6)  # L/100km
+            elif fuel_type == "Diesel Fuel":
+                fuel_consumption = round(consumption / 10.0, 6)  # L/100km
+            elif fuel_type == "Electricity":
+                fuel_consumption = None  # Already in kWh
 
-        return jsonify({
-            "city": cityname,
-            "state": state,
-            "vehicle_type": vehicle_type,
-            "fuel_type": fuel_type,
-            "age": age,
-            "speed": speed,
-            "energy_consumption": round(consumption, 6),
-            "energy_unit": "kWh/100km",
-            "fuel_consumption": fuel_consumption,
-            "fuel_unit": "L/100km" if fuel_consumption else None
-        })
+            result = {
+                "city": cityname,
+                "state": state,
+                "vehicle_type": vehicle_type,
+                "fuel_type": fuel_type,
+                "age": age,
+                "speed": speed,
+                "energy_consumption": round(consumption, 6),
+                "energy_unit": "kWh/100km",
+                "fuel_consumption": fuel_consumption,
+                "fuel_unit": "L/100km" if fuel_consumption else None
+            }
+            all_results.append(result)
+
+        return jsonify(all_results)
 
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500
