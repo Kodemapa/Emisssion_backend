@@ -930,14 +930,34 @@ def predict_consumption():
         except Exception as e:
             return jsonify({"error": f"Prediction failed: {str(e)}"}), 400
 
-        # Fuel consumption conversion (optional)
+        # Fuel consumption conversion from MWh/mile to appropriate units
+        # All predictions are currently in MWh/mile, convert to specific fuel units
         fuel_consumption = None
-        if fuel_type == "Gasoline":
-            fuel_consumption = round(consumption / 8.9, 6)  # L/100km
+        fuel_unit = None
+        
+        if fuel_type == "CNG":
+            # Convert MWh/mile to GGE/mile (1 GGE = 33.7 kWh = 0.0337 MWh)
+            fuel_consumption = round(consumption / 0.0337, 6)  # GGE/mile
+            fuel_unit = "GGE/mile"
         elif fuel_type == "Diesel Fuel":
-            fuel_consumption = round(consumption / 10.0, 6)  # L/100km
+            # Convert MWh/mile to gallon/mile
+            # Diesel energy content: ~38.6 kWh/gallon = 0.0386 MWh/gallon
+            fuel_consumption = round(consumption / 0.0386, 6)  # gallon/mile
+            fuel_unit = "gallon/mile"
+        elif fuel_type == "Gasoline":
+            # Convert MWh/mile to gallon/mile
+            # Gasoline energy content: ~33.7 kWh/gallon = 0.0337 MWh/gallon
+            fuel_consumption = round(consumption / 0.0337, 6)  # gallon/mile
+            fuel_unit = "gallon/mile"
+        elif fuel_type == "Ethanol (E85)":
+            # Convert MWh/mile to gallon/mile
+            # E85 energy content: ~25.7 kWh/gallon = 0.0257 MWh/gallon
+            fuel_consumption = round(consumption / 0.0257, 6)  # gallon/mile
+            fuel_unit = "gallon/mile"
         elif fuel_type == "Electricity":
-            fuel_consumption = None  # Already in kWh
+            # Already in MWh/mile, keep as is
+            fuel_consumption = round(consumption, 6)  # MWh/mile
+            fuel_unit = "MWh/mile"
 
         return jsonify({
             "city": cityname,
@@ -946,10 +966,9 @@ def predict_consumption():
             "fuel_type": fuel_type,
             "age": age,
             "speed": speed,
-            "energy_consumption": round(consumption, 6),
-            "energy_unit": "kWh/100km",
+            "energy_consumption_mwh_mile": round(consumption, 6),  # Original prediction
             "fuel_consumption": fuel_consumption,
-            "fuel_unit": "L/100km" if fuel_consumption else None
+            "fuel_unit": fuel_unit
         })
 
     except Exception as e:
