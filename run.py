@@ -166,7 +166,7 @@ class MLPRegressor(nn.Module):
 
 # ---------- Categories ----------
 VEHICLE_CATS = [
-    "Combination long-haul Truck","Combination short-haul Truck","Light Commercial Truck",
+    "Combination Long-haul Truck","Combination short-haul Truck","Light Commercial Truck",
     "Motorhome - Recreational Vehicle","Motorcycle","Other Buses","Passenger Car","Passenger Truck",
     "Refuse Truck","School Bus","Single Unit long-haul Truck","Single Unit short-haul Truck","Transit Bus"
 ]
@@ -926,7 +926,7 @@ def predict_consumption():
 
         # Predict consumption using predict_one (same as predict_emissions)
         try:
-            consumption = predict_one(payload, energy_model_key)
+            consumptions = predict_one(payload, energy_model_key)
         except Exception as e:
             return jsonify({"error": f"Prediction failed: {str(e)}"}), 400
 
@@ -935,7 +935,12 @@ def predict_consumption():
         fuel_consumption = None
         fuel_unit = None
         
-        if fuel_type == "CNG":
+        SCALING_FACTOR = 0.001
+        energy_value_kWh_100km = consumptions
+        consumption = (energy_value_kWh_100km / 1000) * (1 / 0.621371)
+        consumption *= SCALING_FACTOR
+                    
+        if fuel_type == "Compressed Natural Gas - CNG":
             # Convert MWh/mile to GGE/mile (1 GGE = 33.7 kWh = 0.0337 MWh)
             fuel_consumption = round(consumption / 0.0337, 6)  # GGE/mile
             fuel_unit = "GGE/mile"
@@ -949,7 +954,7 @@ def predict_consumption():
             # Gasoline energy content: ~33.7 kWh/gallon = 0.0337 MWh/gallon
             fuel_consumption = round(consumption / 0.0337, 6)  # gallon/mile
             fuel_unit = "gallon/mile"
-        elif fuel_type == "Ethanol (E85)":
+        elif fuel_type == "Ethanol - E-85":
             # Convert MWh/mile to gallon/mile
             # E85 energy content: ~25.7 kWh/gallon = 0.0257 MWh/gallon
             fuel_consumption = round(consumption / 0.0257, 6)  # gallon/mile
