@@ -835,7 +835,7 @@ def predict_emissions():
                     all_predictions.append(response)
                     continue
                 elif emission_type == "NOx" or emission_type == "PM2.5 Brake Wear" or emission_type == "PM2.5 Tire Wear":
-                    prediction_value = prediction_value * 100
+                    prediction_value = prediction_value
                     unit = "gr/mile"
                     response = {
                         "EmissionType": emission_type,
