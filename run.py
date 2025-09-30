@@ -166,7 +166,7 @@ class MLPRegressor(nn.Module):
 
 # ---------- Categories ----------
 VEHICLE_CATS = [
-    "Combination Long-haul Truck","Combination short-haul Truck","Light Commercial Truck",
+    "Combination Long-haul Truck","Combination Short-haul Truck","Light Commercial Truck",
     "Motorhome - Recreational Vehicle","Motorcycle","Other Buses","Passenger Car","Passenger Truck",
     "Refuse Truck","School Bus","Single Unit long-haul Truck","Single Unit short-haul Truck","Transit Bus"
 ]
@@ -771,7 +771,7 @@ def predict_emissions():
             return jsonify({"error": f"Missing required fields: city, fuelType, vehicleType"}), 400
 
         # Step 4: Get the dynamic speed from the predefined list
-        speeds = [10, 20, 30, 40, 50, 60, 70]  # Get a random speed from the list
+        speeds = list(range(0, 70))  # Get a random speed from the list
 
         # Step 5: Prepare the input data for the prediction
         payload = {
@@ -887,7 +887,7 @@ def predict_consumption():
         fuel_type = data.get("fuelType", "").strip()
         vehicle_type = data.get("vehicleType", "").strip()
         age = data.get("vehicleAge", 5)
-        speed = data.get("speed", 60)
+        speeds = list(range(0, 70))  # speeds 0–69
 
         # Validate required
         if not all([cityname, fuel_type, vehicle_type]):
@@ -908,77 +908,68 @@ def predict_consumption():
         if vehicle_type and vehicle_type not in VEHICLE_CATS:
             return jsonify({"error": f"Invalid vehicle_type: {vehicle_type}"}), 400
 
-        # Prepare payload using the same format as predict_emissions
-        payload = {
-            "Age": age,
-            "Speed": speed,
-            "Vehicle Type": vehicle_type,
-            "Fuel Type": fuel_type,
-            "State": "GA"  # Always use GA for these models (same as predict_emissions)
-        }
-
-        # Use the energy model key (same approach as predict_emissions)
+        # Use GA energy model
         energy_model_key = "gaTotalEnergyRate"
-        
-        # Check if the model exists
         if energy_model_key not in models:
             return jsonify({"error": f"Energy model '{energy_model_key}' not found"}), 400
 
-        # Predict consumption using predict_one (same as predict_emissions)
-        try:
-            consumptions = predict_one(payload, energy_model_key)
-        except Exception as e:
-            return jsonify({"error": f"Prediction failed: {str(e)}"}), 400
-
-        # Fuel consumption conversion from MWh/mile to appropriate units
-        # All predictions are currently in MWh/mile, convert to specific fuel units
-        fuel_consumption = None
-        fuel_unit = None
-        
+        results = []  # collect results for all speeds
         SCALING_FACTOR = 0.001
-        energy_value_kWh_100km = consumptions
-        consumption = (energy_value_kWh_100km / 1000) * (1 / 0.621371)
-        consumption *= SCALING_FACTOR
-                    
-        if fuel_type == "Compressed Natural Gas - CNG":
-            # Convert MWh/mile to GGE/mile (1 GGE = 33.7 kWh = 0.0337 MWh)
-            fuel_consumption = round(consumption / 0.0337, 6)  # GGE/mile
-            fuel_unit = "GGE/mile"
-        elif fuel_type == "Diesel Fuel":
-            # Convert MWh/mile to gallon/mile
-            # Diesel energy content: ~38.6 kWh/gallon = 0.0386 MWh/gallon
-            fuel_consumption = round(consumption / 0.0386, 6)  # gallon/mile
-            fuel_unit = "gallon/mile"
-        elif fuel_type == "Gasoline":
-            # Convert MWh/mile to gallon/mile
-            # Gasoline energy content: ~33.7 kWh/gallon = 0.0337 MWh/gallon
-            fuel_consumption = round(consumption / 0.0337, 6)  # gallon/mile
-            fuel_unit = "gallon/mile"
-        elif fuel_type == "Ethanol - E-85":
-            # Convert MWh/mile to gallon/mile
-            # E85 energy content: ~25.7 kWh/gallon = 0.0257 MWh/gallon
-            fuel_consumption = round(consumption / 0.0257, 6)  # gallon/mile
-            fuel_unit = "gallon/mile"
-        elif fuel_type == "Electricity":
-            # Already in MWh/mile, keep as is
-            fuel_consumption = round(consumption, 6)  # MWh/mile
-            fuel_unit = "MWh/mile"
 
-        return jsonify({
-            "city": cityname,
-            "state": "GA",  # Always GA since we're using GA models
-            "vehicle_type": vehicle_type,
-            "fuel_type": fuel_type,
-            "age": age,
-            "speed": speed,
-            "energy_consumption_mwh_mile": round(consumption, 6),  # Original prediction
-            "fuel_consumption": fuel_consumption,
-            "fuel_unit": fuel_unit
-        })
+        for speed in speeds:
+            payload = {
+                "Age": age,
+                "Speed": speed,
+                "Vehicle Type": vehicle_type,
+                "Fuel Type": fuel_type,
+                "State": "GA"  # Always GA for these models
+            }
+
+            try:
+                consumptions = predict_one(payload, energy_model_key)
+            except Exception as e:
+                return jsonify({"error": f"Prediction failed at speed {speed}: {str(e)}"}), 400
+
+            # Convert energy consumption
+            energy_value_kWh_100km = consumptions
+            consumption = (energy_value_kWh_100km / 1000) * (1 / 0.621371)
+            consumption *= SCALING_FACTOR
+
+            fuel_consumption, fuel_unit = None, None
+            if fuel_type == "Compressed Natural Gas - CNG":
+                fuel_consumption = round(consumption / 0.0337, 6)
+                fuel_unit = "GGE/mile"
+            elif fuel_type == "Diesel Fuel":
+                fuel_consumption = round(consumption / 0.0386, 6)
+                fuel_unit = "gallon/mile"
+            elif fuel_type == "Gasoline":
+                fuel_consumption = round(consumption / 0.0337, 6)
+                fuel_unit = "gallon/mile"
+            elif fuel_type == "Ethanol - E-85":
+                fuel_consumption = round(consumption / 0.0257, 6)
+                fuel_unit = "gallon/mile"
+            elif fuel_type == "Electricity":
+                fuel_consumption = round(consumption, 6)
+                fuel_unit = "MWh/mile"
+
+            results.append({
+                "city": cityname,
+                "state": "GA",
+                "vehicle_type": vehicle_type,
+                "fuel_type": fuel_type,
+                "age": age,
+                "speed": speed,
+                "energy_consumption_mwh_mile": round(consumption, 6),
+                "fuel_consumption": fuel_consumption,
+                "fuel_unit": fuel_unit
+            })
+
+        # ✅ return once at the end, after all speeds
+        return jsonify(results), 200
 
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500
-    
+
 
 
     
