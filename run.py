@@ -166,7 +166,7 @@ class MLPRegressor(nn.Module):
 
 # ---------- Categories ----------
 VEHICLE_CATS = [
-    "Combination Long-haul Truck","Combination Short-haul Truck","Light Commercial Truck",
+    "Combination Long-haul Truck","Combination Short-haul Truck","Light Commercial Truck","Single Unit Short-haul Truck",
     "Motorhome - Recreational Vehicle","Motorcycle","Other Buses","Passenger Car","Passenger Truck",
     "Refuse Truck","School Bus","Single Unit long-haul Truck","Single Unit short-haul Truck","Transit Bus"
 ]
@@ -253,7 +253,35 @@ models = {
     "gaPM25TireWear": load_model("best_model_GAPM25Tire.pth", input_features=19),
 }
 
-def predict_one(inputs, model_key):
+def predict_one(inputs, model_key, models):
+    """
+    Runs a single prediction using the specified model key
+    from the dynamically loaded model dictionary.
+    """
+    if model_key not in models:
+        raise ValueError(f"Model key '{model_key}' not found in loaded models.")
+
+    model_info = models[model_key]
+    model = model_info["model"]
+    preprocessor = model_info["preprocessor"]
+    target_scaler = model_info["target_scaler"]
+
+    df = pd.DataFrame([inputs])
+    processed_input = preprocessor.transform(df)
+
+    if hasattr(processed_input, "toarray"):
+        input_tensor = torch.tensor(processed_input.toarray(), dtype=torch.float32)
+    else:
+        input_tensor = torch.tensor(processed_input, dtype=torch.float32)
+
+    with torch.no_grad():
+        raw_prediction = model(input_tensor)
+        prediction = target_scaler.inverse_transform(raw_prediction.numpy())
+
+    return float(prediction[0][0])
+
+
+def predict_ones(inputs, model_key):
     if model_key not in models:
         raise ValueError(f"Model key '{model_key}' not found.")
     model_info = models[model_key]
@@ -749,7 +777,41 @@ def upload_projected_traffic():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
+def load_state_models(city_name: str):
+    """
+    Dynamically load models based on the city/state.
+    Each state's models are stored under 'models/<STATE>/'.
+    """
+    state = CITY_TO_STATE.get(city_name)
 
+    # Build absolute path using this file's directory
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    state_path = os.path.join(base_dir, "models", state)
+
+    print(f"[INFO] City={city_name}, State={state}, Path={state_path}")
+
+    feature_map_all = {
+        "CA": {"CO2": 19, "Energy": 20, "NOx": 19, "PM25Brake": 20, "PM25Tire": 20},
+        "GA": {"CO2": 19, "Energy": 20, "NOx": 19, "PM25Brake": 20, "PM25Tire": 19},
+        "NY": {"CO2": 18, "Energy": 19, "NOx": 18, "PM25Brake": 19, "PM25Tire": 19},
+        "WA": {"CO2": 19, "Energy": 20, "NOx": 19, "PM25Brake": 20, "PM25Tire": 20}
+    }
+
+    # Select feature map for this state
+    feature_map = feature_map_all.get(state, feature_map_all["GA"])
+
+    try:
+        return {
+            f"{state.lower()}Co2": load_model(os.path.join(state_path, f"best_model_{state}CO2.pth"), input_features=feature_map["CO2"]),
+            f"{state.lower()}TotalEnergyRate": load_model(os.path.join(state_path, f"best_model_{state}Energy.pth"), input_features=feature_map["Energy"]),
+            f"{state.lower()}NOx": load_model(os.path.join(state_path, f"best_model_{state}NOx.pth"), input_features=feature_map["NOx"]),
+            f"{state.lower()}PM25BrakeWear": load_model(os.path.join(state_path, f"best_model_{state}PM25Brake.pth"), input_features=feature_map["PM25Brake"]),
+            f"{state.lower()}PM25TireWear": load_model(os.path.join(state_path, f"best_model_{state}PM25Tire.pth"), input_features=feature_map["PM25Tire"]),
+        }
+    except Exception as e:
+        raise FileNotFoundError(f"❌ Failed to load models for state '{state}' from {state_path}: {e}")
+    
+    
 @app.route("/predict_emissions", methods=["POST"])
 def predict_emissions():
     try:
@@ -770,26 +832,36 @@ def predict_emissions():
         if not all([cityname, fuel_type, vehicle_type]):
             return jsonify({"error": f"Missing required fields: city, fuelType, vehicleType"}), 400
 
+        state = CITY_TO_STATE.get(cityname, "GA")
+        state_models = load_state_models(cityname)
+
         # Step 4: Get the dynamic speed from the predefined list
-        speeds = list(range(0, 70))  # Get a random speed from the list
+        speeds = list(range(10, 71))  # Get a random speed from the list
 
         # Step 5: Prepare the input data for the prediction
         payload = {
             "Age": age,
             "Vehicle Type": vehicle_type,
             "Fuel Type": fuel_type,
-            "State": "GA"  # Always use GA for these models
+            "State": state
         }
 
         all_predictions = []
 
         emission_type_mapping = {
-            "CO2 Emissions": "gaCo2",
-            "Energy Rate": "gaTotalEnergyRate",
-            "NOx": "gaNOx",
-            "PM2.5 Brake Wear": "gaPM25BrakeWear",
-            "PM2.5 Tire Wear": "gaPM25TireWear"
+            "CO2 Emissions": [f"{state.lower()}Co2", "g/mile"],
+            "Energy Rate": [f"{state.lower()}TotalEnergyRate", "kWh/100km"],
+            "NOx": [f"{state.lower()}NOx", "g/mile"],
+            "PM2.5 Brake Wear": [f"{state.lower()}PM25BrakeWear", "g/mile"],
+            "PM2.5 Tire Wear": [f"{state.lower()}PM25TireWear", "g/mile"]
         }
+        
+        if emission_type and emission_type not in emission_type_mapping:
+            valid_types = ", ".join(emission_type_mapping.keys())
+            return jsonify({
+                "error": f"Invalid EmissionType '{emission_type}'. "
+                        f"Valid options: {valid_types}"
+            }), 400
 
         # Step 7: Loop over the speed values and call predict_one for each speed
         for speed in speeds:
@@ -800,64 +872,35 @@ def predict_emissions():
                 payload["Road Gradient"] = data.get("RoadGradient", 5)
 
             if emission_type:
-                if emission_type not in emission_type_mapping:
-                    return jsonify({"error": f"Invalid EmissionType: {emission_type}. Valid types are {', '.join(emission_type_mapping.keys())}."}), 400
-                prediction_key = emission_type_mapping[emission_type]
+                # Predict only one emission type
+                model_key, unit = emission_type_mapping[emission_type]
                 try:
-                    prediction_value = predict_one(payload, prediction_key)
+                    prediction = predict_one(payload, model_key, models=state_models)
                 except Exception as e:
-                    return jsonify({"error": str(e)}), 400
+                    return jsonify({
+                        "error": f"Prediction failed at speed {speed}: {str(e)}"
+                    }), 400
 
-                if emission_type == "CO2 Emissions":
-                    unit = "gr/mile"
-                    response = {
-                        "EmissionType": emission_type,
-                        "PredictedValue": round(prediction_value, 6),
-                        "Unit": unit,
-                        "Speed": speed,
-                        "VehicleType": vehicle_type,
-                    }
-                    all_predictions.append(response)
-                    continue
-                elif emission_type == "Energy Rate":
-                    SCALING_FACTOR = 0.001
-                    energy_value_kWh_100km = prediction_value
-                    energy_value_MWh_mile = (energy_value_kWh_100km / 1000) * (1 / 0.621371)
-                    energy_value_MWh_mile *= SCALING_FACTOR
-                    unit = "MWh/mile"
-                    response = {
-                        "EmissionType": emission_type,
-                        "PredictedValue": round(energy_value_MWh_mile, 6),
-                        "Unit": unit,
-                        "Speed": speed,
-                        "VehicleType": vehicle_type,
-                    }
-                    all_predictions.append(response)
-                    continue
-                elif emission_type == "NOx" or emission_type == "PM2.5 Brake Wear" or emission_type == "PM2.5 Tire Wear":
-                    prediction_value = prediction_value
-                    unit = "gr/mile"
-                    response = {
-                        "EmissionType": emission_type,
-                        "PredictedValue": round(prediction_value, 6),
-                        "Unit": unit,
-                        "Speed": speed,
-                        "VehicleType": vehicle_type,
-                    }
-                    all_predictions.append(response)
-                    continue
-                else:
-                    unit = "g/km"
-                    response = {
-                        "EmissionType": emission_type,
-                        "PredictedValue": round(prediction_value, 6),
-                        "Unit": unit,
-                        "Speed": speed,
-                        "VehicleType": vehicle_type,
-                    }
-                    all_predictions.append(response)
+                all_predictions.append({
+                    "EmissionType": emission_type,
+                    "PredictedValue": round(prediction, 6),
+                    "Unit": unit,
+                    "Speed": speed,
+                    "VehicleType": vehicle_type,
+                    "FuelType": fuel_type,
+                    "City": cityname,
+                    "State": state
+                })
 
             else:
+                # Predict all emission types
+                multi_result = {"Speed": speed, "City": cityname, "State": state}
+                for label, (key, unit) in emission_type_mapping.items():
+                    try:
+                        multi_result[label] = round(predict_one(payload, key, models=state_models), 6)
+                    except Exception:
+                        multi_result[label] = None
+                all_predictions.append(multi_result)
                 # If no EmissionType is provided, return all predictions for all models
                 result = {}
                 for key in models.keys():
@@ -894,10 +937,19 @@ def predict_consumption():
             return jsonify({"error": "Missing required parameters"}), 400
 
         # Map city to state
-        state = CITY_TO_STATE.get(cityname, None)
-        if not state:
-            return jsonify({"error": f"City '{cityname}' not mapped to any state"}), 400
+        normalized_city = cityname.strip().lower()
+        CITY_TO_STATE_NORMALIZED = {
+            "atlanta": "GA",
+            "los angeles": "CA",
+            "losangeles": "CA",
+            "newyork": "NY",
+            "new york": "NY",
+            "seattle": "WA"
+        }
+        state = CITY_TO_STATE_NORMALIZED.get(normalized_city, "GA")
 
+        # Step 5: Load correct models dynamically based on city
+        state_models = load_state_models(cityname)
         # Validate age
         try:
             age = float(age) if age else 5.0
@@ -907,11 +959,27 @@ def predict_consumption():
         # Validate vehicle_type
         if vehicle_type and vehicle_type not in VEHICLE_CATS:
             return jsonify({"error": f"Invalid vehicle_type: {vehicle_type}"}), 400
+        
+        KJ_PER_UNIT = {
+            "Gasoline": 123462.432,                
+            "Diesel Fuel": 138451.739,
+            "Ethanol - E-85": 85729.28,
+            "Compressed Natural Gas - CNG": 124854.529,
+            "Electricity": 3600.0
+        }
+
+        UNIT_TYPE = {
+            "Gasoline": "gallon/mile",
+            "Diesel Fuel": "gallon/mile",
+            "Ethanol - E-85": "gallon/mile",
+            "Compressed Natural Gas - CNG": "GGE/mile",
+            "Electricity": "kWh/mile"
+        }
 
         # Use GA energy model
-        energy_model_key = "gaTotalEnergyRate"
-        if energy_model_key not in models:
-            return jsonify({"error": f"Energy model '{energy_model_key}' not found"}), 400
+        energy_model_key = f"{state.lower()}TotalEnergyRate"
+        if energy_model_key not in state_models:
+            return jsonify({"error": f"Energy model '{energy_model_key}' not found for {state}"}), 400
 
         results = []  # collect results for all speeds
         SCALING_FACTOR = 0.001
@@ -922,49 +990,36 @@ def predict_consumption():
                 "Speed": speed,
                 "Vehicle Type": vehicle_type,
                 "Fuel Type": fuel_type,
-                "State": "GA"  # Always GA for these models
+                "State": state  
             }
 
             try:
-                consumptions = predict_one(payload, energy_model_key)
+                consumptions = predict_one(payload, energy_model_key, models=state_models)
             except Exception as e:
                 return jsonify({"error": f"Prediction failed at speed {speed}: {str(e)}"}), 400
 
-            # Convert energy consumption
-            energy_value_kWh_100km = consumptions
-            consumption = (energy_value_kWh_100km / 1000) * (1 / 0.621371)
-            consumption *= SCALING_FACTOR
+            energy_kj_per_mile = (consumptions * 3600) / 62.1371
+            
+            kj_per_unit = KJ_PER_UNIT.get(fuel_type)
+            if not kj_per_unit:
+                return jsonify({"error": f"Fuel type '{fuel_type}' not recognized"}), 400
+            
+            fuel_consumption = energy_kj_per_mile / kj_per_unit
+            fuel_unit = UNIT_TYPE.get(fuel_type, "unit/mile")
 
-            fuel_consumption, fuel_unit = None, None
-            if fuel_type == "Compressed Natural Gas - CNG":
-                fuel_consumption = round(consumption / 0.0337, 6)
-                fuel_unit = "GGE/mile"
-            elif fuel_type == "Diesel Fuel":
-                fuel_consumption = round(consumption / 0.0386, 6)
-                fuel_unit = "gallon/mile"
-            elif fuel_type == "Gasoline":
-                fuel_consumption = round(consumption / 0.0337, 6)
-                fuel_unit = "gallon/mile"
-            elif fuel_type == "Ethanol - E-85":
-                fuel_consumption = round(consumption / 0.0257, 6)
-                fuel_unit = "gallon/mile"
-            elif fuel_type == "Electricity":
-                fuel_consumption = round(consumption, 6)
-                fuel_unit = "MWh/mile"
-
+            
             results.append({
                 "city": cityname,
-                "state": "GA",
+                "state": state,
                 "vehicle_type": vehicle_type,
                 "fuel_type": fuel_type,
                 "age": age,
                 "speed": speed,
-                "energy_consumption_mwh_mile": round(consumption, 6),
-                "fuel_consumption": fuel_consumption,
+                "energy_kj_per_mile": round(energy_kj_per_mile, 6),
+                "fuel_consumption": round(fuel_consumption, 8),
                 "fuel_unit": fuel_unit
             })
 
-        # ✅ return once at the end, after all speeds
         return jsonify(results), 200
 
     except Exception as e:
