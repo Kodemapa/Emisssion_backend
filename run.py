@@ -836,7 +836,7 @@ def predict_emissions():
         state_models = load_state_models(cityname)
 
         # Step 4: Get the dynamic speed from the predefined list
-        speeds = list(range(10, 71))  # Get a random speed from the list
+        speeds = list(range(0, 71))  # Get a random speed from the list
 
         # Step 5: Prepare the input data for the prediction
         payload = {
