@@ -168,7 +168,7 @@ class MLPRegressor(nn.Module):
 VEHICLE_CATS = [
     "Combination Long-haul Truck","Combination Short-haul Truck","Light Commercial Truck","Single Unit Short-haul Truck",
     "Motorhome - Recreational Vehicle","Motorcycle","Other Buses","Passenger Car","Passenger Truck",
-    "Refuse Truck","School Bus","Single Unit long-haul Truck","Single Unit short-haul Truck","Transit Bus"
+    "Refuse Truck","School Bus","Single Unit Long-haul Truck","Single Unit short-haul Truck","Transit Bus"
 ]
 FUEL_CATS = ["Gasoline","Diesel Fuel","Electricity","Compressed Natural Gas - CNG","Ethanol - E-85"]
 STATE_CATS = ["CA","GA","NY","WA"]
