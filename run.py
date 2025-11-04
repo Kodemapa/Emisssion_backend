@@ -471,9 +471,9 @@ def upload_vehicle_data(type):
             transaction_id = GLOBAL_TRANSACTION_ID  # use global consistent ID
 
     # Common metadata
-    main_city = request.form.get("city_name") or request.form.get("main_city")
+    main_city = request.form.get("city_name") or request.form.get("city")
     main_vehicle_type = request.form.get("vehicle_type")
-    main_year = request.form.get("year")
+    main_year = request.form.get("year") or request.form.get("base_year")
     user_id = request.form.get("user_id")
 
     # ---------- Case: mfd_params (JSON payload) ----------
@@ -623,6 +623,19 @@ def upload_vehicle_data(type):
             "Vehicle Count": "vehicle_count",
             "penetration": "age"
         }, inplace=True)
+        # Add metadata for vehicle_classification
+        if main_city and "city" not in df.columns:
+            df["city"] = main_city
+        if main_vehicle_type and "vehicle_type" not in df.columns:
+            df["vehicle_type"] = main_vehicle_type
+        if main_year and "BaseYear" not in df.columns:
+            df["BaseYear"] = main_year
+        df["transaction_id"] = transaction_id
+        df["user_id"] = user_id
+        # Keep relevant columns for vehicle_classification_data
+        vehicle_cols = ["data_city", "data_vehicle_type", "fuel_type", "vehicle_count", "age", 
+                       "city", "vehicle_type", "BaseYear", "transaction_id", "user_id"]
+        df = df[[col for col in vehicle_cols if col in df.columns]]
 
     elif type == "penetration_rate":
         df.rename(columns={
@@ -631,6 +644,16 @@ def upload_vehicle_data(type):
             "Fuel Type": "fuel_type",
             "Penetration": "penetration"
         }, inplace=True)
+        # Add metadata for penetration_rate
+        if main_city and "city" not in df.columns:
+            df["city"] = main_city
+        if main_vehicle_type and "vehicle_type" not in df.columns:
+            df["vehicle_type"] = main_vehicle_type
+        df["transaction_id"] = transaction_id
+        df["user_id"] = user_id
+        # Keep only relevant columns
+        penetration_cols = ["city", "vehicle_type", "fuel_type", "penetration", "transaction_id", "user_id"]
+        df = df[[col for col in penetration_cols if col in df.columns]]
 
     elif type == "projected_traffic":
         df.rename(columns={
@@ -638,13 +661,19 @@ def upload_vehicle_data(type):
             "Year": "year",
             "Volume": "volume"
         }, inplace=True)
+        # Add metadata for projected_traffic
+        df["transaction_id"] = transaction_id
+        # Keep only relevant columns
+        traffic_cols = ["tract", "year", "volume", "transaction_id"]
+        df = df[[col for col in traffic_cols if col in df.columns]]
 
-    # Add metadata
-    df["city"] = main_city
-    df["vehicle_type"] = main_vehicle_type
-    df["BaseYear"] = main_year
-    df["transaction_id"] = transaction_id
-    df["user_id"] = user_id
+    else:
+        # Add metadata for other types
+        df["city"] = main_city
+        df["vehicle_type"] = main_vehicle_type
+        df["BaseYear"] = main_year
+        df["transaction_id"] = transaction_id
+        df["user_id"] = user_id
 
     save_to_db_data(type, df)
 
@@ -728,6 +757,13 @@ def upload_projected_traffic():
         df_csv["transaction_id"] = transaction_id
         df_csv["city_name"] = city_name
         df_csv["year"] = int(year)
+        
+        # ✅ Keep only columns that exist in the projected_traffic_volume table
+        required_cols = ["transaction_id", "city_name", "year", "tract", "volume"]
+        df_csv = df_csv[[col for col in required_cols if col in df_csv.columns]]
+        
+        print(f"[DEBUG] CSV columns before save: {list(df_csv.columns)}")
+        print(f"[DEBUG] CSV shape: {df_csv.shape}")
 
         # -------- Parse file_table (detail data) --------
         if file_table_file:
@@ -758,6 +794,14 @@ def upload_projected_traffic():
 
         # Add transaction_id
         df_table["transaction_id"] = transaction_id
+        
+        # ✅ Keep only columns that exist in the projected_traffic_details table
+        detail_cols = ["transaction_id", "time", "datetime", "traffic_volume", 
+                      "traffic_speed", "adjusted_traffic", "density", "speed"]
+        df_table = df_table[[col for col in detail_cols if col in df_table.columns]]
+        
+        print(f"[DEBUG] Detail table columns before save: {list(df_table.columns)}")
+        print(f"[DEBUG] Detail table shape: {df_table.shape}")
 
         # -------- Save to DB --------
         conn = sqlite3.connect(DB_FILE)
