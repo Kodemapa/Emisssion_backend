@@ -175,6 +175,7 @@ STATE_CATS = ["CA","GA","NY","WA"]
 CITY_TO_STATE = {
     "Atlanta": "GA",
     "Los Angeles": "CA", 
+    "LosAngeles": "CA",
     "NewYork": "NY",
     "Seattle": "WA"
 }
@@ -1069,8 +1070,80 @@ def predict_consumption():
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
+@app.route("/process/traffic", methods=["POST"])
+def process_traffic_route():
+    """
+    Triggers the traffic analysis script from traffic_processor.py
+    Expects a POST request with form-data:
+    - parameters_file: The GA_tract_parameters.csv file (or for another state)
+    - city_name: "Atlanta" (or other city)
+    - year: "2030" (or other year)
+    """
+    try:
+        # 1. Get data from the form
+        if 'parameters_file' not in request.files:
+            return jsonify({"error": "Missing 'parameters_file' in form-data"}), 400
+        
+        params_file = request.files['parameters_file']
+        city_name = request.form.get('city_name')
+        year = request.form.get('year')
 
+        if not city_name or not year:
+            return jsonify({"error": "Missing 'city_name' or 'year' in form-data"}), 400
+
+        print(f"Starting traffic analysis for {city_name} ({year})...")
+        
+        # Import here to avoid circular dependency
+        from traffic_processor import run_traffic_analysis
+        
+        # 2. Call the processor function
+        # It reads the params_file directly
+        result = run_traffic_analysis(params_file, city_name, year)
+        
+        if result["status"] == "success":
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+
+    except Exception as e:
+        print(f"[ERROR] /process/traffic: {str(e)}")
+        return jsonify({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}), 500
+
+
+@app.route("/plot/traffic/<string:city_name>/<string:year>", methods=["GET"])
+def plot_traffic_route(city_name, year):
+    """
+    Generates and returns the traffic plot as a PNG image
+    based on the state and year.
+    e.g., /plot/traffic/Atlanta/2024
+    """
+    try:
+        print(f"Generating traffic plot for {city_name} ({year})...")
+        
+        # Import here to avoid circular dependency
+        from traffic_plotter import generate_plot_image
+        
+        # 1. Generate the plot image in memory
+        img_buffer = generate_plot_image(city_name, year)
+        
+        if img_buffer:
+            # 2. Return the image
+            return send_file(
+                img_buffer,
+                mimetype='image/png',
+                as_attachment=False,
+                download_name=f'{city_name}_{year}_plot.png'
+            )
+        else:
+            return jsonify({"status": "error", "message": "Failed to generate plot. Check server logs."}), 500
+
+    except FileNotFoundError as e:
+        print(f"[ERROR] /plot/traffic: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 404
+    except Exception as e:
+        print(f"[ERROR] /plot/traffic: {str(e)}")
+        return jsonify({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}), 500
 
     
 if __name__=="__main__":
-    app.run(host="0.0.0.0",port=5003,debug=True)
+    app.run(host="0.0.0.0", port=5003, debug=True, use_reloader=False)
