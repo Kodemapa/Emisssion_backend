@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from scipy.optimize import fsolve
+from scipy.interpolate import interp1d  # <-- FIX: Added this import
 import warnings
 from run import CITY_TO_STATE # Import the city mapping from your run.py
 
@@ -94,7 +95,6 @@ STATE_CONFIGS = {
         # WA uses the complex solver for all tracts
         "simple_solver_tracts": []
     }
-    # You can add "NY" and "WA" configurations here later
 }
 # --- End of Configurations ---
 
@@ -215,31 +215,34 @@ def run_traffic_analysis(params_file_obj, city_name, year):
                 traffic_volume = traffic_volume_data['Adjusted Traffic Volume'].values
 
                 # 5. Get dynamic threshold from config
-                # This replaces the hardcoded `if state == 'GA': ...` block
                 threshold = state_thresholds.get(tract_id, state_thresholds['default'])
                 
-                # --- This adjustment logic is generic and works for both states ---
+                # --- This adjustment logic is now FIXED to match the notebooks ---
                 qm_indices = np.where(traffic_volume >= Qm)[0]
                 if len(qm_indices) > 0:
                     first_qm_idx = qm_indices[0]
                     before_qm_indices = np.where(np.abs(traffic_volume[:first_qm_idx] - Qm) <= threshold)[0]
                     if len(before_qm_indices) > 0:
-                        traffic_volume[before_qm_indices[0]] = Qm
-                        qm_indices = np.insert(qm_indices, 0, before_qm_indices[0])
+                        # FIX 1: Use [-1] to get the last point BEFORE congestion
+                        traffic_volume[before_qm_indices[-1]] = Qm
+                        qm_indices = np.insert(qm_indices, 0, before_qm_indices[-1])
                 
                     after_qm_indices = np.where(np.abs(traffic_volume[first_qm_idx:] - Qm) <= threshold)[0] + first_qm_idx
                     if len(after_qm_indices) > 0:
                         traffic_volume[after_qm_indices[-1]] = Qm
                         qm_indices = np.append(qm_indices, after_qm_indices[-1])
                 
+                # FIX 2: Replaced the custom interpolation with the notebook's linear interpolation
                 if len(qm_indices) > 1:
                     for j in range(len(qm_indices) - 1):
                         start_idx, end_idx = qm_indices[j], qm_indices[j + 1]
                         if end_idx - start_idx > 1:
-                            new_value = (traffic_volume[start_idx] + traffic_volume[end_idx]) / 2
+                            # This is the linear interpolation logic from the notebooks
+                            x = [start_idx, end_idx]
+                            y = [traffic_volume[start_idx], traffic_volume[end_idx]]
+                            f = interp1d(x, y)
                             for k in range(start_idx + 1, end_idx):
-                                traffic_volume[k] = new_value
-                                new_value = (new_value + traffic_volume[end_idx]) / 2
+                                traffic_volume[k] = f(k)
                 
                 max_q_index = np.argmax(traffic_volume)
                 # --- End of adjustment logic ---
@@ -249,13 +252,12 @@ def run_traffic_analysis(params_file_obj, city_name, year):
                 calculated_speed = []
                 prev_speed, prev_q, prev_k = None, None, None
 
-                # !! This logic is now DYNAMIC based on the state's config
                 if tract_id in simple_solver_list:
-                    # Use simple solver (e.g., for the 3 GA tracts)
+                    # Use simple solver
                     calculated_density = [_solve_for_k_simple(q, **tract_parameters) for q in traffic_volume]
                     calculated_speed = [q / k if k > 0 else np.nan for q, k in zip(traffic_volume, calculated_density)]
                 else:
-                    # Use MFD (complex) solver (e.g., for all CA tracts and most GA tracts)
+                    # Use MFD (complex) solver
                     for i, q in enumerate(traffic_volume):
                         is_before_max_q = i <= max_q_index
                         k = _solve_for_k_mfd(q, prev_speed, prev_k, prev_q, traffic_volume[max_q_index], **tract_parameters, is_before_max_q=is_before_max_q)

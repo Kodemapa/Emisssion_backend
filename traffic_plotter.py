@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
@@ -86,12 +89,26 @@ def generate_plot_image(city_name, year):
         ax1.set_xlabel('Time (hr)', fontname='Sans Serif', fontsize=16, labelpad=20)
         ax1.set_ylabel('Traffic Speed (mph)', fontname='Sans Serif', fontsize=16, labelpad=20)
 
-        # Set custom x-ticks (assuming 4 intervals = 1 hour)
-        x_ticks = list(range(4, len(time_axis), 4))
-        x_labels = [str(i) for i in range(1, len(x_ticks) + 1)]
+        # ------------------- START OF X-AXIS LOGIC -------------------
+        # Set custom x-ticks to show every hour (0, 1, 2, ..., 24)
+        
+        # 1. Define the hour labels you want to see
+        hour_labels_to_show = list(range(0, 25))  # This creates [0, 1, 2, 3, ..., 24]
+        
+        # 2. Convert these hour labels into data index positions
+        # (Assuming 4 data points = 1 hour)
+        # 0*4=0, 1*4=4, 2*4=8, ..., 24*4=96
+        x_ticks = [h * 4 for h in hour_labels_to_show]
+        
+        # 3. Convert the hour labels into strings for the plot
+        x_labels = [str(h) for h in hour_labels_to_show]
+        
         ax1.set_xticks(x_ticks)
+        # 4. Set font size to 14 to match Y-axis
         ax1.set_xticklabels(x_labels, fontname='Sans Serif', fontsize=14)
+        # -------------------- END OF X-AXIS LOGIC --------------------
 
+        # Set Y-axis font size
         for label in ax1.get_yticklabels():
             label.set_fontsize(14)
             label.set_fontname('Sans Serif')
@@ -100,15 +117,10 @@ def generate_plot_image(city_name, year):
         ax1.grid(True, which='both', linestyle=':', linewidth='0.5')
         
         margin = 1
-        ax1.set_xlim(left=-margin, right=len(time_axis) - 1 + margin)
+        # Adjust xlim to properly include the 0 and 96 tick marks
+        ax1.set_xlim(left=-margin, right=len(time_axis) - 1 + margin) 
         plt.subplots_adjust(left=0.05, right=0.9, top=0.9, bottom=0.15)
         
-    # Legend removed as per user request
-    # handles1, labels1 = ax1.get_legend_handles_labels()
-    # handles2, labels2 = ax2.get_legend_handles_labels()
-    # fig.legend(handles1 + handles2, labels1 + labels2, loc='center right', bbox_to_anchor=(1.1, 0.5), fontsize='small')
-
-
         # --- Save plot to a memory buffer ---
         img_buffer = io.BytesIO()
         plt.savefig(img_buffer, format='png', bbox_inches='tight')
