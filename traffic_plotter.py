@@ -54,7 +54,7 @@ def generate_plot_image(city_name, year):
         colormap = plt.get_cmap('tab20')
         colors = [colormap(i) for i in np.linspace(0, 1, len(tract_ids))]
         fig, ax1 = plt.subplots(figsize=(15, 5))
-        plt.title(f'Year {year} - {city_name} ({state})', fontname='Sans Serif', fontsize=28, pad=22)
+        plt.title(f'Year {year} - {city_name} ({state})', fontname='Sans Serif', fontsize=19, pad=18)
         for idx, (time, traffic_volume, speed, tract_id) in enumerate(all_data):
             x = np.arange(len(time))
             # Handle potential NaNs in speed/volume data before interpolation
@@ -67,13 +67,13 @@ def generate_plot_image(city_name, year):
                 ax1.plot(x_new, traffic_speed_interp(x_new), color=color, label=f'Speed - Tract {tract_id}')
             if idx == 0:
                 ax2 = ax1.twinx()
-                ax2.set_ylabel('Traffic Volume (veh/hr/ln)', fontname='Sans Serif', fontsize=28, labelpad=20)
+                ax2.set_ylabel('Traffic Volume (veh/hr/ln)', fontname='Sans Serif', fontsize=18, labelpad=16)
             if np.sum(valid_volume) > 1:
                 traffic_volume_interp = interp1d(x[valid_volume], traffic_volume[valid_volume], kind='linear', fill_value="extrapolate")
                 x_new = np.linspace(0, len(time) - 1, num=len(time))
                 ax2.plot(x_new, traffic_volume_interp(x_new), color=color, linestyle='--', label=f'Volume - Tract {tract_id}')
-        ax1.set_xlabel('Time (hr)', fontname='Sans Serif', fontsize=28, labelpad=20)
-        ax1.set_ylabel('Traffic Speed (mph)', fontname='Sans Serif', fontsize=28, labelpad=20)
+        ax1.set_xlabel('Time (hr)', fontname='Sans Serif', fontsize=18, labelpad=16)
+        ax1.set_ylabel('Traffic Speed (mph)', fontname='Sans Serif', fontsize=18, labelpad=16)
         # ------------------- START OF X-AXIS LOGIC -------------------
         # Set custom x-ticks to show every hour (0, 1, 2, ..., 23)
         # 1. Define the hour labels you want to see (0 to 23 only)
@@ -85,15 +85,15 @@ def generate_plot_image(city_name, year):
         x_labels = [str(h) for h in hour_labels_to_show]
         ax1.set_xticks(x_ticks)
         # 4. Set font size to 14 to match Y-axis
-        ax1.set_xticklabels(x_labels, fontname='Sans Serif', fontsize=22)
+        ax1.set_xticklabels(x_labels, fontname='Sans Serif', fontsize=14)
         # -------------------- END OF X-AXIS LOGIC --------------------
         # Set Y-axis font size
         for label in ax1.get_yticklabels():
-            label.set_fontsize(22)
+            label.set_fontsize(14)
             label.set_fontname('Sans Serif')
         if 'ax2' in locals():
             for label in ax2.get_yticklabels():
-                label.set_fontsize(22)
+                label.set_fontsize(14)
                 label.set_fontname('Sans Serif')
         ax1.minorticks_on()
         ax1.grid(True, which='both', linestyle=':', linewidth='0.5')
